@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
-using KNNRigger;
 
 [CustomEditor(typeof(KNNRig))]
 public class KNNRigEditor : Editor

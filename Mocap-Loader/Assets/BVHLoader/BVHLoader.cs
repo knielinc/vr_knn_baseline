@@ -4,7 +4,6 @@ using System.IO;
 using UnityEngine;
 using KdTree;
 using KdTree.Math;
-using KNNRigger;
 using UnityEngine.Animations.Rigging;
 
 public class SkeletonConverter
