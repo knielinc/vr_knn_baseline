@@ -171,7 +171,7 @@ public class BVHLoader : MonoBehaviour
         return 0;
     }
 
-    public void createKNNRig(string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate)
+    public void createKNNRig(string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, string outputPath)
     {
         float sourceFrameTime = bvhParser.frameTime;
         float targetFrameTime = 1.0f / pollingRate;
@@ -233,8 +233,8 @@ public class BVHLoader : MonoBehaviour
         rHandTarget.transform.parent = targets.transform;
         headTarget.transform.parent = targets.transform;
 
-        kNNRigComponent.saveSkeleton();
-        kNNRigComponent.loadSkeleton();
+        kNNRigComponent.saveSkeleton(outputPath);
+        //kNNRigComponent.loadSkeleton();
     }
 
     private void iterateFrameForChildren(BVHParser.BVHBone currBone, Transform currTransform, float frame, bool normalizeSkeleton)

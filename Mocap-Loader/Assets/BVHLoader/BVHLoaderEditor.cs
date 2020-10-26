@@ -19,7 +19,10 @@ public class BVHLoaderEditor : Editor
     string headBoneName  = "LowerBack/Spine/Spine1/Neck/Neck1/Head";
     string lHandBoneName = "LowerBack/Spine/Spine1/LeftShoulder/LeftArm/LeftForeArm/LeftHand";
     string rHandBoneName = "LowerBack/Spine/Spine1/RightShoulder/RightArm/RightForeArm/RightHand";
+    string outputPath = "Data/KNNSkeletons/knnSkeleton.knnSkeleton";
+
     string slidingWindowSize = "100";
+
     string slidingWindowOffset = "50";
     string pollingRate = "80";
 
@@ -87,11 +90,11 @@ public class BVHLoaderEditor : Editor
 
         if (GUILayout.Button("Create K-NN Rig"))
         {
-            bvhLoader.createKNNRig(headBoneName, rHandBoneName, lHandBoneName, float.Parse(slidingWindowSize), float.Parse(slidingWindowOffset),  float.Parse(pollingRate));
+            bvhLoader.createKNNRig(headBoneName, rHandBoneName, lHandBoneName, float.Parse(slidingWindowSize), float.Parse(slidingWindowOffset),  float.Parse(pollingRate), outputPath);
         }
         //GUILayout.Label("Output FileName");
 
-        lHandBoneName = GUILayout.TextField(lHandBoneName);
+        outputPath = GUILayout.TextField(outputPath);
 
 
     }

@@ -290,17 +290,22 @@ namespace KNNRigger
 
         }
 
-        public void saveSkeleton()
+        public void saveSkeleton(string outputPath)
         {
-            StreamWriter writer = new StreamWriter("test.txt", false);
+            FileInfo fi = new FileInfo(outputPath); 
+            if (!fi.Directory.Exists) 
+            {
+                System.IO.Directory.CreateDirectory(fi.DirectoryName); 
+            }
+            StreamWriter writer = new StreamWriter(outputPath, false);
 
             writer.Write(skeleton.ComposeString());
 
             writer.Close();
         }
 
-        public void loadSkeleton() {
-            skeleton.Parse("test.txt");
+        public void loadSkeleton(string inputPath) {
+            skeleton.Parse(inputPath);
         }
 
         public void updateSkeleton()
