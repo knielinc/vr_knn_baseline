@@ -1,5 +1,6 @@
 ﻿using JetBrains.Annotations;
 using KdTree;
+using KdTree.Math;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -176,18 +177,35 @@ namespace KNNRigger
             bool isFirstItem = true;
             foreach(var currValue in skeleton.lHandQueryTree)
             {
-                nextLine += currValue.Value.ToString();
-                foreach(float currfloat in currValue.Point)
+                if (isFirstItem)
+                {
+                    nextLine += currValue.Value.ToString();
+                    isFirstItem = false;
+                }
+                else
+                {
+                    nextLine += " " + currValue.Value.ToString();
+                }
+                foreach (float currfloat in currValue.Point)
                 {
                     nextLine += " " + currfloat.ToString();
                 }
             }
+            writer.WriteLine(nextLine);
 
             nextLine = "";
             isFirstItem = true;
-            foreach (var currValue in skeleton.lHandQueryTree)
+            foreach (var currValue in skeleton.rHandQueryTree)
             {
-                nextLine += currValue.Value.ToString();
+                if (isFirstItem)
+                {
+                    nextLine += currValue.Value.ToString();
+                    isFirstItem = false;
+                }
+                else
+                {
+                    nextLine += " " + currValue.Value.ToString();
+                }
                 foreach (float currfloat in currValue.Point)
                 {
                     nextLine += " " + currfloat.ToString();
@@ -206,8 +224,82 @@ namespace KNNRigger
             string[] words = currLine.Split(' ');
             int nrOfBones = int.Parse(words[0]);
             int timeSteps = int.Parse(words[1]);
-            int framesPerTimeStep = int.Parse(words[2]);
+            int featureVecLength = int.Parse(words[2]);
 
+            currLine = reader.ReadLine(); // skip comment
+
+            List<KNNBone> boneList = new List<KNNBone>();
+
+            for (int currBoneIdx = 0; currBoneIdx < nrOfBones; currBoneIdx++)
+            {
+                currLine = reader.ReadLine();
+
+                words = currLine.Split(' ');
+
+                string currBoneName = words[0];
+                int currBoneId = int.Parse(words[1]);
+                int currBoneParentId = int.Parse(words[2]);
+                Vector3 currBoneOffset = new Vector3(float.Parse(words[3]), float.Parse(words[4]), float.Parse(words[5]));
+
+                KNNBone currKNNBone = new KNNBone(currBoneName);
+                currKNNBone.offset = currBoneOffset;
+
+                for(int currRotationIdx = 0; currRotationIdx < timeSteps; currRotationIdx++)
+                {
+                    int currRotationFloatIdxOffset = 4 * currRotationIdx;
+                    float rotX = float.Parse(words[6 + currRotationFloatIdxOffset]);
+                    float rotY = float.Parse(words[6 + currRotationFloatIdxOffset + 1]);
+                    float rotZ = float.Parse(words[6 + currRotationFloatIdxOffset + 2]);
+                    float rotW = float.Parse(words[6 + currRotationFloatIdxOffset + 3]);
+
+                    Quaternion currRot = new Quaternion(rotX, rotY, rotZ, rotW);
+                    currKNNBone.rotations.Add(currRot);
+                }
+                if (currBoneParentId >= 0)
+                {
+                    currKNNBone.parent = boneList[currBoneParentId];
+                    currKNNBone.parent.children.Add(currKNNBone);
+                }
+
+                boneList.Add(currKNNBone);
+            }
+            KdTree<float, int> lHandQueryTree = new KdTree<float, int>(featureVecLength, new FloatMath());
+            currLine = reader.ReadLine();
+            words = currLine.Split(' ');
+            int startingWindowIndex = 0;
+            for(int currWindow = 0; currWindow < timeSteps; currWindow++)
+            {
+                int value = int.Parse(words[startingWindowIndex]);
+                float[] featureVec = new float[featureVecLength];
+
+                for(int currFeatureIdx = 0; currFeatureIdx < featureVecLength; currFeatureIdx++)
+                {
+                    featureVec[currFeatureIdx] = float.Parse(words[startingWindowIndex + 1 + currFeatureIdx]);
+                }
+
+                lHandQueryTree.Add(featureVec, value);
+
+                startingWindowIndex += featureVecLength + 1;
+            }
+
+            KdTree<float, int> rHandQueryTree = new KdTree<float, int>(featureVecLength, new FloatMath());
+            currLine = reader.ReadLine();
+            words = currLine.Split(' ');
+            startingWindowIndex = 0;
+            for (int currWindow = 0; currWindow < timeSteps; currWindow++)
+            {
+                int value = int.Parse(words[startingWindowIndex]);
+                float[] featureVec = new float[featureVecLength];
+
+                for (int currFeatureIdx = 0; currFeatureIdx < featureVecLength; currFeatureIdx++)
+                {
+                    featureVec[currFeatureIdx] = float.Parse(words[startingWindowIndex + 1 + currFeatureIdx]);
+                }
+
+                rHandQueryTree.Add(featureVec, value);
+
+                startingWindowIndex += featureVecLength + 1;
+            }
 
             reader.Close();
         }
