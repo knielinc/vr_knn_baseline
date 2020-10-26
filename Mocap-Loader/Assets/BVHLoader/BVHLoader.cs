@@ -5,8 +5,7 @@ using UnityEngine;
 using KdTree;
 using KdTree.Math;
 using KNNRigger;
-
-[System.Serializable]
+using UnityEngine.Animations.Rigging;
 
 public class SkeletonConverter
 {
@@ -184,7 +183,12 @@ public class BVHLoader : MonoBehaviour
         int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
         var rHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
         var lHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
-        KNNBone kNNSkeleton = new KNNBone(root.transform);
+
+        GameObject rootBoneObj = new GameObject();
+        KNNBone rootBone = rootBoneObj.AddComponent<KNNBone>();
+        
+        rootBone.initKNNBone(root.transform);
+        rootBone.DivideOffsetsBy(this.size);
 
         for (int currentWindow = 0; currentWindow < totalWindows; currentWindow++)
         {
@@ -212,29 +216,54 @@ public class BVHLoader : MonoBehaviour
             int lastPositionSourceIndex = (int)((currentWindow * slidingWindowOffset + slidingWindowSize) / sourceFrameTime);
             
             setToFrame(lastPositionSourceIndex, true, true, true);
-            kNNSkeleton.AddRotationsFromTransform(root);
+            rootBone.AddRotationsFromTransform(root);
     
             lHandTree.Add(lHandPoints, currentWindow);
             rHandTree.Add(rHandPoints, currentWindow);
         }
-        KNNSkeleton finalKNNSkeleton = new KNNSkeleton(kNNSkeleton, lHandTree, rHandTree, framesPerWindow * 3);
-        //finalKNNSkeleton.SetSkeletonFromRightHandPos(root.transform);
+        
         GameObject kNNRig = new GameObject("KNN-Rig");
         GameObject targets = new GameObject("Targets");
         GameObject lHandTarget = new GameObject("LHandTarget");
         GameObject rHandTarget = new GameObject("RHandTarget");
         GameObject headTarget = new GameObject("HeadTarget");
-        KNNRig kNNRigComponent = (KNNRig) kNNRig.AddComponent(typeof(KNNRig));
-        kNNRigComponent.rightHandTarget = rHandTarget.transform;
+        GameObject kNNSkeleton_ = new GameObject("KNN-Skeleton");
+
+        KNNRig kNNRigComponent = kNNRig.AddComponent<KNNRig>();
+        BoneRenderer myBoneRenderer = kNNRig.AddComponent<BoneRenderer>();
+
+        List<Transform> boneTransforms = new List<Transform>();
+        Stack<KNNBone> boneStack = new Stack<KNNBone>();
+        boneStack.Push(rootBone);
+
+        while (boneStack.Count > 0)
+        {
+            KNNBone top = boneStack.Pop();
+            foreach (KNNBone child in top.children)
+            {
+                boneStack.Push(child);
+            }
+            boneTransforms.Add(top.transform);
+        }
+        myBoneRenderer.transforms = boneTransforms.ToArray();
+
+        KNNSkeleton finalKNNSkeleton = kNNSkeleton_.AddComponent<KNNSkeleton>();
+        finalKNNSkeleton.SetKNNSkeleton(rootBone, lHandTree, rHandTree, framesPerWindow * 3);
+        kNNRigComponent.skeletonPath = outputPath;
+        
         kNNRigComponent.skeleton = finalKNNSkeleton;
-        root.parent = kNNRig.transform;
+        kNNRigComponent.headTarget = headTarget.transform;
+        kNNRigComponent.rHandTarget = rHandTarget.transform;
+        kNNRigComponent.lHandTarget = lHandTarget.transform;
+
+        finalKNNSkeleton.transform.parent = kNNRig.transform;
+        rootBone.transform.parent = finalKNNSkeleton.transform;
         targets.transform.parent = kNNRig.transform;
         lHandTarget.transform.parent = targets.transform;
         rHandTarget.transform.parent = targets.transform;
         headTarget.transform.parent = targets.transform;
+        finalKNNSkeleton.Save(outputPath);
 
-        kNNRigComponent.saveSkeleton(outputPath);
-        //kNNRigComponent.loadSkeleton();
     }
 
     private void iterateFrameForChildren(BVHParser.BVHBone currBone, Transform currTransform, float frame, bool normalizeSkeleton)

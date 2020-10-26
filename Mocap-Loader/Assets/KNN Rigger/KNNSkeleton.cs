@@ -1,6 +1,6 @@
-﻿using JetBrains.Annotations;
-using KdTree;
+﻿using KdTree;
 using KdTree.Math;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,33 +9,47 @@ using UnityEngine;
 
 namespace KNNRigger
 {
-    public class KNNBone
+    public class KNNBone : MonoBehaviour
     {
-        public Transform transform;
         public List<KNNBone> children;
         public KNNBone parent;
-        public string name;
         public List<Quaternion> rotations;
         public Vector3 offset;
-        public KNNBone(string name)
+        public void initKNNBone(string name)
         {
             this.name = name;
             this.children = new List<KNNBone>();
             this.rotations = new List<Quaternion>();
-
         }
-        public KNNBone(Transform rootTransform)
+        public void initKNNBone(Transform rootTransform)
         {
             this.name = rootTransform.name;
-            this.transform = rootTransform;
-            this.offset = rootTransform.localPosition;
+            this.transform.localPosition = rootTransform.localPosition;
+            this.transform.localRotation = rootTransform.localRotation;
+            this.offset = this.transform.localPosition;
             this.children = new List<KNNBone>();
             this.rotations = new List<Quaternion>();
 
 
             for (int childIdx = 0; childIdx < rootTransform.childCount; childIdx++)
             {
-                children.Add(new KNNBone(rootTransform.GetChild(childIdx)));
+                GameObject childObj = new GameObject();
+
+                KNNBone childBone = (KNNBone) childObj.AddComponent(typeof(KNNBone));
+                childBone.parent = this;
+                childBone.transform.parent = this.transform;
+                childBone.initKNNBone(rootTransform.GetChild(childIdx));
+                children.Add(childBone);
+            }
+        }
+
+        public void DivideOffsetsBy(float factor)
+        {
+            this.offset /= factor;
+            this.transform.localPosition = this.offset;
+            foreach (KNNBone child in this.children)
+            {
+                child.DivideOffsetsBy(factor);
             }
         }
 
@@ -76,7 +90,7 @@ namespace KNNRigger
         }
 
     }
-    public class KNNSkeleton
+    public class KNNSkeleton : MonoBehaviour
     {
         public KNNBone rootBone;
         public KdTree<float, int> lHandQueryTree;
@@ -84,7 +98,13 @@ namespace KNNRigger
         private int featureVectorLength;
         private Transform lHandTarget;
         private Transform rHandTarget;
-        public KNNSkeleton(KNNBone rootBone, KdTree<float, int> lHandQueryTree, KdTree<float, int> rHandQueryTree, int featureVectorLength)
+
+        public void SetKNNSkeleton(string filePath)
+        {
+            this.Parse(filePath);
+        }
+
+        public void SetKNNSkeleton(KNNBone rootBone, KdTree<float, int> lHandQueryTree, KdTree<float, int> rHandQueryTree, int featureVectorLength)
         {
             this.rootBone = rootBone;
             this.lHandQueryTree = lHandQueryTree;
@@ -96,7 +116,7 @@ namespace KNNRigger
         {
             float[] posVec = new float[featureVectorLength];
 
-            for(int i = 0; i < featureVectorLength; i++)
+            for (int i = 0; i < featureVectorLength; i++)
             {
                 switch (i % 3)
                 {
@@ -117,7 +137,21 @@ namespace KNNRigger
             rootBone.SetToRotation(index);
         }
 
-        public string ComposeString()
+        public void Save(string outputPath)
+        {
+            FileInfo fi = new FileInfo(outputPath);
+            if (!fi.Directory.Exists)
+            {
+                System.IO.Directory.CreateDirectory(fi.DirectoryName);
+            }
+            StreamWriter writer = new StreamWriter(outputPath, false);
+
+            writer.Write(this.ComposeString());
+
+            writer.Close();
+        }
+
+        private string ComposeString()
         {
             StringBuilder stringBuilder = new StringBuilder();
 
@@ -170,14 +204,14 @@ namespace KNNRigger
 
         public void Parse(string file)
         {
-            StreamReader reader = new StreamReader("test.txt");
+            StreamReader reader = new StreamReader(file);
             string currLine = reader.ReadLine(); // skip comment
             currLine = reader.ReadLine();
             string[] words = currLine.Split(' ');
             int nrOfBones = int.Parse(words[0]);
             int timeSteps = int.Parse(words[1]);
             int featureVecLength = int.Parse(words[2]);
-
+            this.featureVectorLength = featureVecLength;
             currLine = reader.ReadLine(); // skip comment
 
             List<KNNBone> boneList = new List<KNNBone>();
@@ -193,7 +227,10 @@ namespace KNNRigger
                 int currBoneParentId = int.Parse(words[2]);
                 Vector3 currBoneOffset = new Vector3(float.Parse(words[3]), float.Parse(words[4]), float.Parse(words[5]));
 
-                KNNBone currKNNBone = new KNNBone(currBoneName);
+                GameObject newKNNBoneObj = new GameObject();
+                KNNBone currKNNBone = (KNNBone)newKNNBoneObj.AddComponent(typeof(KNNBone));
+                currKNNBone.initKNNBone(currBoneName);
+
                 currKNNBone.offset = currBoneOffset;
 
                 for (int currRotationIdx = 0; currRotationIdx < timeSteps; currRotationIdx++)
@@ -207,22 +244,28 @@ namespace KNNRigger
                     Quaternion currRot = new Quaternion(rotX, rotY, rotZ, rotW);
                     currKNNBone.rotations.Add(currRot);
                 }
+
                 if (currBoneParentId >= 0)
                 {
                     currKNNBone.parent = boneList[currBoneParentId];
                     currKNNBone.parent.children.Add(currKNNBone);
-                } else
+                    currKNNBone.transform.parent = currKNNBone.parent.transform;
+                }
+                else if(rootBone == null) // currBoneParentId = -1 && we have no rootBone
                 {
                     this.rootBone = currKNNBone;
                 }
+                currKNNBone.transform.localPosition = currKNNBone.offset;
 
                 boneList.Add(currKNNBone);
             }
             currLine = reader.ReadLine();
-            this.lHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
+            if(this.lHandQueryTree == null)
+                this.lHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
 
             currLine = reader.ReadLine();
-            this.rHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
+            if (this.rHandQueryTree == null)
+                this.rHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
 
             reader.Close();
         }
@@ -230,7 +273,7 @@ namespace KNNRigger
         private KdTree<float, int> ParseKDTree(string file, int featureVecLength, int timeSteps)
         {
             KdTree<float, int> tree = new KdTree<float, int>(featureVecLength, new FloatMath());
-            
+
             string[] words = file.Split(' ');
             int startingWindowIndex = 0;
             for (int currWindow = 0; currWindow < timeSteps; currWindow++)
@@ -272,49 +315,5 @@ namespace KNNRigger
             return returnString;
         }
     }
-    public class KNNRig : MonoBehaviour
-    {
-        public Transform rightHandTarget;
-        public KNNSkeleton skeleton;
 
-        
-        // Start is called before the first frame update
-        void Start()
-        {
-
-        }
-
-        // Update is called once per frame
-        void Update()
-        {
-
-        }
-
-        public void saveSkeleton(string outputPath)
-        {
-            FileInfo fi = new FileInfo(outputPath); 
-            if (!fi.Directory.Exists) 
-            {
-                System.IO.Directory.CreateDirectory(fi.DirectoryName); 
-            }
-            StreamWriter writer = new StreamWriter(outputPath, false);
-
-            writer.Write(skeleton.ComposeString());
-
-            writer.Close();
-        }
-
-        public void loadSkeleton(string inputPath) {
-            skeleton.Parse(inputPath);
-        }
-
-        public void updateSkeleton()
-        {
-            if (skeleton != null && rightHandTarget != null)
-            {
-                skeleton.SetSkeletonFromRightHandPos(rightHandTarget);
-            }
-        }
-    }
-}//namespance KNNRigger
-
+}

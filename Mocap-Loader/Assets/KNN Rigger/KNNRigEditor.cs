@@ -15,12 +15,12 @@ public class KNNRigEditor : Editor
 
         KNNRig knnRig = (KNNRig)target;
 
-        if (GUILayout.Button("set to right hand"))
+        if (GUILayout.Button("loadFromFile"))
         {
-            knnRig.updateSkeleton();
+            knnRig.InitRig();
         }
 
-        knnRig.updateSkeleton();
+        //knnRig.updateSkeleton();
 
     }
 }
