@@ -68,3 +68,4 @@ crashlytics-build.properties
 Mocap-Loader/Assets/Datastructures.meta
 Mocap-Loader/Assets/Robot Kyle.meta
 Mocap-Loader/Assets/Oculus.meta
+*.knnSkeleton
