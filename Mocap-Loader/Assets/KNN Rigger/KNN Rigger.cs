@@ -4,6 +4,7 @@ using KdTree.Math;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using UnityEngine;
 
 namespace KNNRigger
@@ -115,48 +116,31 @@ namespace KNNRigger
             int index = poseIndex[0].Value;
             rootBone.SetToRotation(index);
         }
-    }
-    public class KNNRig : MonoBehaviour
-    {
-        public Transform rightHandTarget;
-        public KNNSkeleton skeleton;
 
-        
-        // Start is called before the first frame update
-        void Start()
+        public string ComposeString()
         {
+            StringBuilder stringBuilder = new StringBuilder();
 
-        }
-
-        // Update is called once per frame
-        void Update()
-        {
-
-        }
-
-        public void saveSkeleton()
-        {
-            StreamWriter writer = new StreamWriter("test.txt", false);
-            writer.WriteLine("#bones timesteps framesPerTimeStep");
+            stringBuilder.AppendLine("#bones timesteps framesPerTimeStep");
 
             List<KNNBone> boneList = new List<KNNBone>();
             Stack<KNNBone> boneStack = new Stack<KNNBone>();
-            boneStack.Push(skeleton.rootBone);
+            boneStack.Push(this.rootBone);
 
             while (boneStack.Count > 0)
             {
                 KNNBone top = boneStack.Pop();
-                foreach(KNNBone child in top.children)
+                foreach (KNNBone child in top.children)
                 {
                     boneStack.Push(child);
                 }
                 boneList.Add(top);
             }
 
-            writer.WriteLine(boneList.Count.ToString() + " " + skeleton.rootBone.rotations.Count.ToString() + " " + skeleton.lHandQueryTree.First().Point.Length.ToString());
-            writer.WriteLine("#name id parentid offsetx offsety offsetz rotations(quaternions * timesteps)");
+            stringBuilder.AppendLine(boneList.Count.ToString() + " " + this.rootBone.rotations.Count.ToString() + " " + this.lHandQueryTree.First().Point.Length.ToString());
+            stringBuilder.AppendLine("#name id parentid offsetx offsety offsetz rotations(quaternions * timesteps)");
 
-            foreach(KNNBone currBone in boneList)
+            foreach (KNNBone currBone in boneList)
             {
                 string currLine = currBone.name + " ";
 
@@ -166,58 +150,26 @@ namespace KNNRigger
 
                 currLine += currBone.offset.x.ToString() + " " + currBone.offset.y.ToString() + " " + currBone.offset.z.ToString();
 
-                foreach(Quaternion currRot in currBone.rotations)
+                foreach (Quaternion currRot in currBone.rotations)
                 {
                     currLine += " " + currRot.x + " " + currRot.y + " " + currRot.z + " " + currRot.w;
                 }
-                writer.WriteLine(currLine);
+                stringBuilder.AppendLine(currLine);
             }
 
-            string nextLine = "";
-            bool isFirstItem = true;
-            foreach(var currValue in skeleton.lHandQueryTree)
-            {
-                if (isFirstItem)
-                {
-                    nextLine += currValue.Value.ToString();
-                    isFirstItem = false;
-                }
-                else
-                {
-                    nextLine += " " + currValue.Value.ToString();
-                }
-                foreach (float currfloat in currValue.Point)
-                {
-                    nextLine += " " + currfloat.ToString();
-                }
-            }
-            writer.WriteLine(nextLine);
+            string nextLine = this.KdTreeToString(this.lHandQueryTree);
 
-            nextLine = "";
-            isFirstItem = true;
-            foreach (var currValue in skeleton.rHandQueryTree)
-            {
-                if (isFirstItem)
-                {
-                    nextLine += currValue.Value.ToString();
-                    isFirstItem = false;
-                }
-                else
-                {
-                    nextLine += " " + currValue.Value.ToString();
-                }
-                foreach (float currfloat in currValue.Point)
-                {
-                    nextLine += " " + currfloat.ToString();
-                }
-            }
+            stringBuilder.AppendLine(nextLine);
 
-            writer.WriteLine(nextLine);
+            nextLine = this.KdTreeToString(this.rHandQueryTree);
 
-            writer.Close();
+            stringBuilder.AppendLine(nextLine);
+
+            return stringBuilder.ToString();
         }
 
-        public void loadSkeleton() {
+        public void Parse(string file)
+        {
             StreamReader reader = new StreamReader("test.txt");
             string currLine = reader.ReadLine(); // skip comment
             currLine = reader.ReadLine();
@@ -244,7 +196,7 @@ namespace KNNRigger
                 KNNBone currKNNBone = new KNNBone(currBoneName);
                 currKNNBone.offset = currBoneOffset;
 
-                for(int currRotationIdx = 0; currRotationIdx < timeSteps; currRotationIdx++)
+                for (int currRotationIdx = 0; currRotationIdx < timeSteps; currRotationIdx++)
                 {
                     int currRotationFloatIdxOffset = 4 * currRotationIdx;
                     float rotX = float.Parse(words[6 + currRotationFloatIdxOffset]);
@@ -259,33 +211,28 @@ namespace KNNRigger
                 {
                     currKNNBone.parent = boneList[currBoneParentId];
                     currKNNBone.parent.children.Add(currKNNBone);
+                } else
+                {
+                    this.rootBone = currKNNBone;
                 }
 
                 boneList.Add(currKNNBone);
             }
-            KdTree<float, int> lHandQueryTree = new KdTree<float, int>(featureVecLength, new FloatMath());
             currLine = reader.ReadLine();
-            words = currLine.Split(' ');
+            this.lHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
+
+            currLine = reader.ReadLine();
+            this.rHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
+
+            reader.Close();
+        }
+
+        private KdTree<float, int> ParseKDTree(string file, int featureVecLength, int timeSteps)
+        {
+            KdTree<float, int> tree = new KdTree<float, int>(featureVecLength, new FloatMath());
+            
+            string[] words = file.Split(' ');
             int startingWindowIndex = 0;
-            for(int currWindow = 0; currWindow < timeSteps; currWindow++)
-            {
-                int value = int.Parse(words[startingWindowIndex]);
-                float[] featureVec = new float[featureVecLength];
-
-                for(int currFeatureIdx = 0; currFeatureIdx < featureVecLength; currFeatureIdx++)
-                {
-                    featureVec[currFeatureIdx] = float.Parse(words[startingWindowIndex + 1 + currFeatureIdx]);
-                }
-
-                lHandQueryTree.Add(featureVec, value);
-
-                startingWindowIndex += featureVecLength + 1;
-            }
-
-            KdTree<float, int> rHandQueryTree = new KdTree<float, int>(featureVecLength, new FloatMath());
-            currLine = reader.ReadLine();
-            words = currLine.Split(' ');
-            startingWindowIndex = 0;
             for (int currWindow = 0; currWindow < timeSteps; currWindow++)
             {
                 int value = int.Parse(words[startingWindowIndex]);
@@ -296,12 +243,64 @@ namespace KNNRigger
                     featureVec[currFeatureIdx] = float.Parse(words[startingWindowIndex + 1 + currFeatureIdx]);
                 }
 
-                rHandQueryTree.Add(featureVec, value);
+                tree.Add(featureVec, value);
 
                 startingWindowIndex += featureVecLength + 1;
             }
+            return tree;
+        }
+        private string KdTreeToString(KdTree<float, int> tree)
+        {
+            string returnString = "";
+            bool isFirstItem = true;
+            foreach (var currValue in tree)
+            {
+                if (isFirstItem)
+                {
+                    returnString += currValue.Value.ToString();
+                    isFirstItem = false;
+                }
+                else
+                {
+                    returnString += " " + currValue.Value.ToString();
+                }
+                foreach (float currfloat in currValue.Point)
+                {
+                    returnString += " " + currfloat.ToString();
+                }
+            }
+            return returnString;
+        }
+    }
+    public class KNNRig : MonoBehaviour
+    {
+        public Transform rightHandTarget;
+        public KNNSkeleton skeleton;
 
-            reader.Close();
+        
+        // Start is called before the first frame update
+        void Start()
+        {
+
+        }
+
+        // Update is called once per frame
+        void Update()
+        {
+
+        }
+
+        public void saveSkeleton()
+        {
+            StreamWriter writer = new StreamWriter("test.txt", false);
+
+            writer.Write(skeleton.ComposeString());
+
+            writer.Close();
+        }
+
+        public void loadSkeleton() {
+            skeleton.Parse("test.txt");
         }
 
         public void updateSkeleton()
