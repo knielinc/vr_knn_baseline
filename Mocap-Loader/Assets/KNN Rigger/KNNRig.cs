@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Animations.Rigging;
@@ -10,6 +11,9 @@ public class KNNRig : MonoBehaviour
     public Transform rHandTarget;
     public Transform lHandTarget;
     public string skeletonPath = "Data/KNNSkeletons/knnSkeleton.knnSkeleton";
+    public Transform rig;
+    List<Transform> boneTransforms;
+    private List<Tuple<Transform, Transform, Quaternion>> rigTransforms;
     // Start is called before the first frame update
     void Start()
     {
@@ -18,7 +22,7 @@ public class KNNRig : MonoBehaviour
 
     public void InitRig()
     {
-        if(skeleton == null || skeleton.rootBone == null || skeleton.lHandQueryTree == null || skeleton.rHandQueryTree == null)
+        if(skeleton == null || skeleton.rootBone == null || skeleton.lHandQueryTree == null || skeleton.rHandQueryTree == null || skeleton.lHandQueryTree.Count == 0 || skeleton.rHandQueryTree.Count == 0)
         {
             if(skeleton == null)
             {
@@ -41,20 +45,40 @@ public class KNNRig : MonoBehaviour
             myBoneRenderer = this.gameObject.GetComponent<BoneRenderer>();
         }
 
+        boneTransforms = new List<Transform>();
+        rigTransforms = new List<Tuple<Transform, Transform, Quaternion>>();
 
-        List<Transform> boneTransforms = new List<Transform>();
+
         Stack<KNNBone> boneStack = new Stack<KNNBone>();
-        boneStack.Push(skeleton.rootBone);
+        Stack<Transform> transformStack = new Stack<Transform>();
+        boneStack.Push(this.skeleton.rootBone);
+        transformStack.Push(rig);
 
         while (boneStack.Count > 0)
         {
-            KNNBone top = boneStack.Pop();
-            foreach (KNNBone child in top.children)
+            KNNBone topBone = boneStack.Pop();
+            Transform topTransform = null;
+            if (transformStack.Count > 0)
+                topTransform = transformStack.Pop();
+
+            foreach (KNNBone childBone in topBone.children)
             {
-                boneStack.Push(child);
+                boneStack.Push(childBone);
+                if(topTransform != null)
+                {
+                    Transform childTransform = topTransform.Find(childBone.name);
+                    if (childTransform != null)
+                        transformStack.Push(childTransform);
+                }
             }
-            boneTransforms.Add(top.transform);
+
+            boneTransforms.Add(topBone.transform);
+            if (topTransform != null && topTransform.name == topBone.name)
+            {
+                rigTransforms.Add(Tuple.Create(topBone.transform, topTransform, topTransform.rotation));
+            }
         }
+        
         myBoneRenderer.transforms = boneTransforms.ToArray();
         
 
@@ -92,9 +116,17 @@ public class KNNRig : MonoBehaviour
         headTarget.transform.parent = targets.transform;
     }
 
+    public void AssignRig()
+    {
+        foreach(var currElement in rigTransforms)
+        {
+            currElement.Item2.rotation = currElement.Item1.rotation * currElement.Item3;
+        }
+    }
     // Update is called once per frame
     void Update()
     {
         skeleton.SetSkeletonFromRightHandPos(rHandTarget);
+        AssignRig();
     }
 }

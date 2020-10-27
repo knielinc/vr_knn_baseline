@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
-using KdTree;
-using KdTree.Math;
+using Supercluster.KDTree;
 using UnityEngine.Animations.Rigging;
+using System;
 
 public class SkeletonConverter
 {
@@ -21,7 +21,7 @@ public class SkeletonConverter
         BVHParser.BVHBone currBone = parser.root;
         rootObj = new GameObject();
         rootObj.name = currBone.name;
-        rootObj.transform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ);
+        rootObj.transform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ);
 
         transforms.Add(rootObj.transform);
 
@@ -38,7 +38,7 @@ public class SkeletonConverter
         GameObject currObj = new GameObject();
         currObj.name = currBone.name;
         currObj.transform.parent = parent.transform;
-        currObj.transform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ);
+        currObj.transform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ);
 
         if (currObj.transform.position.y < minpos)
         {
@@ -80,14 +80,14 @@ public class BVHLoader : MonoBehaviour
     public void loadSkeleton(string filename)
     {
         bvhParser = new BVHParser(File.ReadAllText(filename));
-
+        
         SkeletonConverter converter = new SkeletonConverter();
         converter.createFromBVH(bvhParser);
         this.size = converter.size;
         root = converter.rootObj.transform;
         foreach(Transform child in this.transform)
         {
-            Object.DestroyImmediate(child.gameObject);
+            UnityEngine.Object.DestroyImmediate(child.gameObject);
         }
         root.parent = this.transform;
 
@@ -128,10 +128,10 @@ public class BVHLoader : MonoBehaviour
             
             if (!centerAnimation)
             {
-                Vector3 pos1 = new Vector3(currBone.channels[0].values[currFrame] + currBone.offsetX,
+                Vector3 pos1 = new Vector3(-currBone.channels[0].values[currFrame] - currBone.offsetX,
                                            currBone.channels[1].values[currFrame] + currBone.offsetY,
                                            currBone.channels[2].values[currFrame] + currBone.offsetZ);
-                Vector3 pos2 = new Vector3(currBone.channels[0].values[currFrame+1] + currBone.offsetX,
+                Vector3 pos2 = new Vector3(-currBone.channels[0].values[currFrame+1] - currBone.offsetX,
                                            currBone.channels[1].values[currFrame+1] + currBone.offsetY,
                                            currBone.channels[2].values[currFrame+1] + currBone.offsetZ);
                 root.localPosition = Vector3.Lerp(pos1, pos2, t);
@@ -180,8 +180,13 @@ public class BVHLoader : MonoBehaviour
 
         int totalWindows = (int)((totalTime - (slidingWindowSize))/ (slidingWindowOffset));
         int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
-        var rHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
-        var lHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
+        //var rHandTree = new KdTree<float, int>(dimensions: 3 * framesPerWindow, new FloatMath());
+        //var lHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
+        var rHandTreeNodes = new List<int>();
+        var rHandTreePoints = new List<float[]>(); 
+        
+        var lHandTreeNodes = new List<int>();
+        var lHandTreePoints = new List<float[]>();
 
         GameObject rootBoneObj = new GameObject();
         KNNBone rootBone = rootBoneObj.AddComponent<KNNBone>();
@@ -216,11 +221,14 @@ public class BVHLoader : MonoBehaviour
             
             setToFrame(lastPositionSourceIndex, true, true, true);
             rootBone.AddRotationsFromTransform(root);
-    
-            lHandTree.Add(lHandPoints, currentWindow);
-            rHandTree.Add(rHandPoints, currentWindow);
+
+            //lHandTree.Add(lHandPoints, currentWindow);
+            //rHandTree.Add(rHandPoints, currentWindow);
+            lHandTreePoints.Add(lHandPoints); lHandTreeNodes.Add(currentWindow);
+            rHandTreePoints.Add(rHandPoints); rHandTreeNodes.Add(currentWindow);
+
         }
-        
+
         GameObject kNNRig = new GameObject("KNN-Rig");
         GameObject targets = new GameObject("Targets");
         GameObject lHandTarget = new GameObject("LHandTarget");
@@ -245,6 +253,9 @@ public class BVHLoader : MonoBehaviour
             boneTransforms.Add(top.transform);
         }
         myBoneRenderer.transforms = boneTransforms.ToArray();
+
+        var rHandTree = new KDTree<float, int>(3 * framesPerWindow, rHandTreePoints.ToArray(), rHandTreeNodes.ToArray(), Metrics.L2Norm);//KdTree<float, int>(dimensions: 3 * framesPerWindow, points: rHandTreePoints, nodes: rHandTreeNodes, metric: );
+        var lHandTree = new KDTree<float, int>(3 * framesPerWindow, lHandTreePoints.ToArray(), lHandTreeNodes.ToArray(), Metrics.L2Norm);
 
         KNNSkeleton finalKNNSkeleton = kNNSkeleton_.AddComponent<KNNSkeleton>();
         finalKNNSkeleton.SetKNNSkeleton(rootBone, lHandTree, rHandTree, framesPerWindow * 3);
@@ -283,10 +294,10 @@ public class BVHLoader : MonoBehaviour
 
         if (normalizeSkeleton)
         {
-            currTransform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ) / this.size;
+            currTransform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ) / this.size;
         } else
         {
-            currTransform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ);
+            currTransform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ);
         }
 
         int i = 0;
@@ -299,7 +310,7 @@ public class BVHLoader : MonoBehaviour
 
     private Quaternion fromEulerYXZ(Vector3 euler)
     {
-        return Quaternion.AngleAxis(wrapAngle(euler.z), Vector3.forward) * Quaternion.AngleAxis(wrapAngle(euler.y), Vector3.up) * Quaternion.AngleAxis(wrapAngle(euler.x), Vector3.right);
+        return Quaternion.AngleAxis(wrapAngle(-euler.z), Vector3.forward) * Quaternion.AngleAxis(wrapAngle(-euler.y), Vector3.up) * Quaternion.AngleAxis(wrapAngle(euler.x), Vector3.right);
     }
     private float wrapAngle(float a)
     {
