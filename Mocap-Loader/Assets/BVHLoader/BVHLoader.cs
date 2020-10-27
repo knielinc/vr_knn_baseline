@@ -21,7 +21,7 @@ public class SkeletonConverter
         BVHParser.BVHBone currBone = parser.root;
         rootObj = new GameObject();
         rootObj.name = currBone.name;
-        rootObj.transform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ);
+        rootObj.transform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ);
 
         transforms.Add(rootObj.transform);
 
@@ -38,7 +38,7 @@ public class SkeletonConverter
         GameObject currObj = new GameObject();
         currObj.name = currBone.name;
         currObj.transform.parent = parent.transform;
-        currObj.transform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ);
+        currObj.transform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ);
 
         if (currObj.transform.position.y < minpos)
         {
@@ -80,7 +80,7 @@ public class BVHLoader : MonoBehaviour
     public void loadSkeleton(string filename)
     {
         bvhParser = new BVHParser(File.ReadAllText(filename));
-
+        
         SkeletonConverter converter = new SkeletonConverter();
         converter.createFromBVH(bvhParser);
         this.size = converter.size;
@@ -128,10 +128,10 @@ public class BVHLoader : MonoBehaviour
             
             if (!centerAnimation)
             {
-                Vector3 pos1 = new Vector3(currBone.channels[0].values[currFrame] + currBone.offsetX,
+                Vector3 pos1 = new Vector3(-currBone.channels[0].values[currFrame] - currBone.offsetX,
                                            currBone.channels[1].values[currFrame] + currBone.offsetY,
                                            currBone.channels[2].values[currFrame] + currBone.offsetZ);
-                Vector3 pos2 = new Vector3(currBone.channels[0].values[currFrame+1] + currBone.offsetX,
+                Vector3 pos2 = new Vector3(-currBone.channels[0].values[currFrame+1] - currBone.offsetX,
                                            currBone.channels[1].values[currFrame+1] + currBone.offsetY,
                                            currBone.channels[2].values[currFrame+1] + currBone.offsetZ);
                 root.localPosition = Vector3.Lerp(pos1, pos2, t);
@@ -283,10 +283,10 @@ public class BVHLoader : MonoBehaviour
 
         if (normalizeSkeleton)
         {
-            currTransform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ) / this.size;
+            currTransform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ) / this.size;
         } else
         {
-            currTransform.localPosition = new Vector3(currBone.offsetX, currBone.offsetY, currBone.offsetZ);
+            currTransform.localPosition = new Vector3(-currBone.offsetX, currBone.offsetY, currBone.offsetZ);
         }
 
         int i = 0;
@@ -299,7 +299,7 @@ public class BVHLoader : MonoBehaviour
 
     private Quaternion fromEulerYXZ(Vector3 euler)
     {
-        return Quaternion.AngleAxis(wrapAngle(euler.z), Vector3.forward) * Quaternion.AngleAxis(wrapAngle(euler.y), Vector3.up) * Quaternion.AngleAxis(wrapAngle(euler.x), Vector3.right);
+        return Quaternion.AngleAxis(wrapAngle(-euler.z), Vector3.forward) * Quaternion.AngleAxis(wrapAngle(-euler.y), Vector3.up) * Quaternion.AngleAxis(wrapAngle(euler.x), Vector3.right);
     }
     private float wrapAngle(float a)
     {
