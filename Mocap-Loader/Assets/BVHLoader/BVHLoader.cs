@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
-using KdTree;
-using KdTree.Math;
+using Supercluster.KDTree;
 using UnityEngine.Animations.Rigging;
+using System;
 
 public class SkeletonConverter
 {
@@ -87,7 +87,7 @@ public class BVHLoader : MonoBehaviour
         root = converter.rootObj.transform;
         foreach(Transform child in this.transform)
         {
-            Object.DestroyImmediate(child.gameObject);
+            UnityEngine.Object.DestroyImmediate(child.gameObject);
         }
         root.parent = this.transform;
 
@@ -180,8 +180,13 @@ public class BVHLoader : MonoBehaviour
 
         int totalWindows = (int)((totalTime - (slidingWindowSize))/ (slidingWindowOffset));
         int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
-        var rHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
-        var lHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
+        //var rHandTree = new KdTree<float, int>(dimensions: 3 * framesPerWindow, new FloatMath());
+        //var lHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
+        var rHandTreeNodes = new List<int>();
+        var rHandTreePoints = new List<float[]>(); 
+        
+        var lHandTreeNodes = new List<int>();
+        var lHandTreePoints = new List<float[]>();
 
         GameObject rootBoneObj = new GameObject();
         KNNBone rootBone = rootBoneObj.AddComponent<KNNBone>();
@@ -216,11 +221,14 @@ public class BVHLoader : MonoBehaviour
             
             setToFrame(lastPositionSourceIndex, true, true, true);
             rootBone.AddRotationsFromTransform(root);
-    
-            lHandTree.Add(lHandPoints, currentWindow);
-            rHandTree.Add(rHandPoints, currentWindow);
+
+            //lHandTree.Add(lHandPoints, currentWindow);
+            //rHandTree.Add(rHandPoints, currentWindow);
+            lHandTreePoints.Add(lHandPoints); lHandTreeNodes.Add(currentWindow);
+            rHandTreePoints.Add(rHandPoints); rHandTreeNodes.Add(currentWindow);
+
         }
-        
+
         GameObject kNNRig = new GameObject("KNN-Rig");
         GameObject targets = new GameObject("Targets");
         GameObject lHandTarget = new GameObject("LHandTarget");
@@ -245,6 +253,9 @@ public class BVHLoader : MonoBehaviour
             boneTransforms.Add(top.transform);
         }
         myBoneRenderer.transforms = boneTransforms.ToArray();
+
+        var rHandTree = new KDTree<float, int>(3 * framesPerWindow, rHandTreePoints.ToArray(), rHandTreeNodes.ToArray(), Metrics.L2Norm);//KdTree<float, int>(dimensions: 3 * framesPerWindow, points: rHandTreePoints, nodes: rHandTreeNodes, metric: );
+        var lHandTree = new KDTree<float, int>(3 * framesPerWindow, lHandTreePoints.ToArray(), lHandTreeNodes.ToArray(), Metrics.L2Norm);
 
         KNNSkeleton finalKNNSkeleton = kNNSkeleton_.AddComponent<KNNSkeleton>();
         finalKNNSkeleton.SetKNNSkeleton(rootBone, lHandTree, rHandTree, framesPerWindow * 3);

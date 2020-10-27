@@ -22,7 +22,7 @@ public class KNNRig : MonoBehaviour
 
     public void InitRig()
     {
-        if(skeleton == null || skeleton.rootBone == null || skeleton.lHandQueryTree == null || skeleton.rHandQueryTree == null)
+        if(skeleton == null || skeleton.rootBone == null || skeleton.lHandQueryTree == null || skeleton.rHandQueryTree == null || skeleton.lHandQueryTree.Count == 0 || skeleton.rHandQueryTree.Count == 0)
         {
             if(skeleton == null)
             {
@@ -54,10 +54,12 @@ public class KNNRig : MonoBehaviour
         boneStack.Push(this.skeleton.rootBone);
         transformStack.Push(rig);
 
-        while (boneStack.Count > 0 && transformStack.Count > 0)
+        while (boneStack.Count > 0)
         {
             KNNBone topBone = boneStack.Pop();
-            Transform topTransform = transformStack.Pop();
+            Transform topTransform = null;
+            if (transformStack.Count > 0)
+                topTransform = transformStack.Pop();
 
             foreach (KNNBone childBone in topBone.children)
             {

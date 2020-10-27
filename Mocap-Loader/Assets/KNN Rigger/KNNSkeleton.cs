@@ -1,5 +1,6 @@
-﻿using KdTree;
-using KdTree.Math;
+﻿
+using Supercluster.KDTree;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -11,8 +12,8 @@ using UnityEngine;
 public class KNNSkeleton : MonoBehaviour
 {
     public KNNBone rootBone;
-    public KdTree<float, int> lHandQueryTree;
-    public KdTree<float, int> rHandQueryTree;
+    public KDTree<float, int> lHandQueryTree;
+    public KDTree<float, int> rHandQueryTree;
     private int featureVectorLength;
     private Transform lHandTarget;
     private Transform rHandTarget;
@@ -22,7 +23,7 @@ public class KNNSkeleton : MonoBehaviour
         this.Parse(filePath);
     }
 
-    public void SetKNNSkeleton(KNNBone rootBone, KdTree<float, int> lHandQueryTree, KdTree<float, int> rHandQueryTree, int featureVectorLength)
+    public void SetKNNSkeleton(KNNBone rootBone, KDTree<float, int> lHandQueryTree, KDTree<float, int> rHandQueryTree, int featureVectorLength)
     {
         this.rootBone = rootBone;
         this.lHandQueryTree = lHandQueryTree;
@@ -50,8 +51,8 @@ public class KNNSkeleton : MonoBehaviour
             }
         }
 
-        KdTreeNode<float, int>[] poseIndex = rHandQueryTree.GetNearestNeighbours(posVec, 1);
-        int index = poseIndex[0].Value;
+        Tuple<float[],int>[] poseIndex = rHandQueryTree.NearestNeighbors(posVec, 1);
+        int index = poseIndex[0].Item2;
         rootBone.SetToRotation(index);
     }
 
@@ -88,8 +89,8 @@ public class KNNSkeleton : MonoBehaviour
             }
             boneList.Add(top);
         }
-
-        stringBuilder.AppendLine(boneList.Count.ToString() + " " + this.rootBone.rotations.Count.ToString() + " " + this.lHandQueryTree.First().Point.Length.ToString());
+        
+        stringBuilder.AppendLine(boneList.Count.ToString() + " " + this.rootBone.rotations.Count.ToString() + " " + this.lHandQueryTree.Navigator.Point.Length.ToString());
         stringBuilder.AppendLine("#name id parentid offsetx offsety offsetz rotations(quaternions * timesteps)");
 
         foreach (KNNBone currBone in boneList)
@@ -178,19 +179,21 @@ public class KNNSkeleton : MonoBehaviour
             boneList.Add(currKNNBone);
         }
         currLine = reader.ReadLine();
-        if(this.lHandQueryTree == null)
+        if(this.lHandQueryTree == null || this.lHandQueryTree.Count == 0)
             this.lHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
 
         currLine = reader.ReadLine();
-        if (this.rHandQueryTree == null)
+        if (this.rHandQueryTree == null || this.rHandQueryTree.Count == 0)
             this.rHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
 
         reader.Close();
     }
 
-    private KdTree<float, int> ParseKDTree(string file, int featureVecLength, int timeSteps)
+    private KDTree<float, int> ParseKDTree(string file, int featureVecLength, int timeSteps)
     {
-        KdTree<float, int> tree = new KdTree<float, int>(featureVecLength, new FloatMath());
+        //KdTree<float, int> tree = new KdTree<float, int>(featureVecLength, new FloatMath());
+        var treeNodes = new List<int>();
+        var treePoints = new List<float[]>();
 
         string[] words = file.Split(' ');
         int startingWindowIndex = 0;
@@ -204,28 +207,32 @@ public class KNNSkeleton : MonoBehaviour
                 featureVec[currFeatureIdx] = float.Parse(words[startingWindowIndex + 1 + currFeatureIdx]);
             }
 
-            tree.Add(featureVec, value);
+            //tree.Add(featureVec, value);
+            treePoints.Add(featureVec); treeNodes.Add(value);
 
             startingWindowIndex += featureVecLength + 1;
         }
-        return tree;
+        return new KDTree<float, int>(featureVecLength, treePoints.ToArray(), treeNodes.ToArray(), Metrics.L2Norm);
     }
-    private string KdTreeToString(KdTree<float, int> tree)
+    private string KdTreeToString(KDTree<float, int> tree)
     {
         string returnString = "";
         bool isFirstItem = true;
-        foreach (var currValue in tree)
+        for (int currValueIdx = 0; currValueIdx < tree.InternalPointArray.Length && currValueIdx < tree.InternalNodeArray.Length; currValueIdx++)
         {
+            if (tree.InternalPointArray[currValueIdx] == null)
+                continue;
+
             if (isFirstItem)
             {
-                returnString += currValue.Value.ToString();
+                returnString += tree.InternalNodeArray[currValueIdx].ToString();
                 isFirstItem = false;
             }
             else
             {
-                returnString += " " + currValue.Value.ToString();
+                returnString += " " + tree.InternalNodeArray[currValueIdx].ToString();
             }
-            foreach (float currfloat in currValue.Point)
+            foreach (float currfloat in tree.InternalPointArray[currValueIdx])
             {
                 returnString += " " + currfloat.ToString();
             }
