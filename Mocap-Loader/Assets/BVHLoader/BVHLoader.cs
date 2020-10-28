@@ -159,7 +159,7 @@ public class BVHLoader : MonoBehaviour
                 Transform head = root.Find("LowerBack/Spine/Spine1/Neck/Neck1/Head");
                 if (head != null)
                 {
-                    root.localPosition = -head.position + this.transform.position;
+                    this.transform.position -= head.position;// + this.transform.position;
                 }
             }
 
