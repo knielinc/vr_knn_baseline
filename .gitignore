@@ -9,7 +9,7 @@
 /Mocap-Loader/[Bb]uilds/
 /Mocap-Loader/[Ll]ogs/
 /Mocap-Loader/[Mm]emoryCaptures/
-/Mocap-Loader/Assets/Datastructures/
+/Mocap-Loader/Assets/Datastructures/KDTree
 /Mocap-Loader/Assets/Oculus/
 /Mocap-Loader/Assets/Plugins/
 /Mocap-Loader/Assets/Resources/
@@ -69,3 +69,4 @@ Mocap-Loader/Assets/Datastructures.meta
 Mocap-Loader/Assets/Robot Kyle.meta
 Mocap-Loader/Assets/Oculus.meta
 *.knnSkeleton
+Mocap-Loader/Assets/Datastructures/KDTree.meta
