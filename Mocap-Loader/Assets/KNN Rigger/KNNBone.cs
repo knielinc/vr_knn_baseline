@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEngine;
 
@@ -14,6 +15,73 @@ public class KNNBone : MonoBehaviour
         this.name = name;
         this.children = new List<KNNBone>();
         this.rotations = new List<Quaternion>();
+    }
+
+    public void initKNNBoneFromFile(string file)
+    {
+        this.children = new List<KNNBone>();
+        this.rotations = new List<Quaternion>();
+
+        StreamReader reader = new StreamReader(file);
+        string currLine = reader.ReadLine(); // skip comment
+        currLine = reader.ReadLine();
+        string[] words = currLine.Split(' ');
+        int nrOfBones = int.Parse(words[0]);
+        int timeSteps = int.Parse(words[1]);
+        int featureVecLength = int.Parse(words[2]);
+        currLine = reader.ReadLine(); // skip comment
+
+        List<KNNBone> boneList = new List<KNNBone>();
+
+        for (int currBoneIdx = 0; currBoneIdx < nrOfBones; currBoneIdx++)
+        {
+            currLine = reader.ReadLine();
+
+            words = currLine.Split(' ');
+
+            string currBoneName = words[0];
+            int currBoneId = int.Parse(words[1]);
+            int currBoneParentId = int.Parse(words[2]);
+            Vector3 currBoneOffset = new Vector3(float.Parse(words[3]), float.Parse(words[4]), float.Parse(words[5]));
+
+            KNNBone currKNNBone;
+
+            if (currBoneParentId >= 0)
+            {
+                GameObject newKNNBoneObj = new GameObject();
+                currKNNBone = (KNNBone)newKNNBoneObj.AddComponent(typeof(KNNBone));
+            } else
+            {
+                currKNNBone = this;
+            }
+
+            currKNNBone.initKNNBone(currBoneName);
+
+            currKNNBone.offset = currBoneOffset;
+
+            for (int currRotationIdx = 0; currRotationIdx < timeSteps; currRotationIdx++)
+            {
+                int currRotationFloatIdxOffset = 4 * currRotationIdx;
+                float rotX = float.Parse(words[6 + currRotationFloatIdxOffset]);
+                float rotY = float.Parse(words[6 + currRotationFloatIdxOffset + 1]);
+                float rotZ = float.Parse(words[6 + currRotationFloatIdxOffset + 2]);
+                float rotW = float.Parse(words[6 + currRotationFloatIdxOffset + 3]);
+
+                Quaternion currRot = new Quaternion(rotX, rotY, rotZ, rotW);
+                currKNNBone.rotations.Add(currRot);
+            }
+
+            if (currBoneParentId >= 0)
+            {
+                currKNNBone.parent = boneList[currBoneParentId];
+                currKNNBone.parent.children.Add(currKNNBone);
+                currKNNBone.transform.parent = currKNNBone.parent.transform;
+            }
+
+            currKNNBone.transform.localPosition = currKNNBone.offset;
+
+            boneList.Add(currKNNBone);
+        }
     }
     public void initKNNBone(Transform rootTransform)
     {

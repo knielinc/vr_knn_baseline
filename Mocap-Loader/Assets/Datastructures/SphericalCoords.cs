@@ -2,11 +2,23 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// The main SphericalCoords class.
+/// Contains all methods for converting from and to SphericalCoords.
+/// </summary>
 public class SphericalCoords
 {
-    public float radius;
-    public float theta; //how far around the "up" axis
-    public float phi; // how "high"
+    // Summary:
+    //     Radius of current coords [0 <= Radius] 
+    public float radius { get; set; }
+
+    // Summary:
+    //     Theta angle of current coordinates. [0 <= theta <= 2*pi]
+    public float theta { get; set; }
+
+    // Summary:
+    //     Phi angle of current coordinates. Phi = 90 deg - latitude. [0 <= phi <= pi]
+    public float phi { get; set; }
 
     public SphericalCoords(float r, float t, float p)
     {
@@ -37,6 +49,9 @@ public class SphericalCoords
         return new SphericalCoords(r, t, p);
     }
 
+    /// <summary>
+    /// Converts to cartesian coordinates.
+    /// </summary>
     public Vector3 ToCartesian()
     {
         return SphericalCoords.SphericalToCartesian(this);

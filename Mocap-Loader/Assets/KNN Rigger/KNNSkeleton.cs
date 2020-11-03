@@ -7,20 +7,22 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using UnityEngine;
-
+using UnityEngine.Animations.Rigging;
 
 public class KNNSkeleton : MonoBehaviour
 {
     public KNNBone rootBone;
     public KDTree<float, int> lHandQueryTree;
     public KDTree<float, int> rHandQueryTree;
+    private List<Transform> boneTransforms;
+    private List<Tuple<Transform, Transform, Quaternion>> rigTransforms;
+    public Transform rig;
     private int featureVectorLength;
-    private Transform lHandTarget;
-    private Transform rHandTarget;
 
     public void SetKNNSkeleton(string filePath)
     {
         this.Parse(filePath);
+        SetBoneRenderer();
     }
 
     public void SetKNNSkeleton(KNNBone rootBone, KDTree<float, int> lHandQueryTree, KDTree<float, int> rHandQueryTree, int featureVectorLength)
@@ -29,31 +31,110 @@ public class KNNSkeleton : MonoBehaviour
         this.lHandQueryTree = lHandQueryTree;
         this.rHandQueryTree = rHandQueryTree;
         this.featureVectorLength = featureVectorLength;
+        SetBoneRenderer();
     }
 
-    public void SetSkeletonFromRightHandPos(Transform rHandTarget)
+    private void SetBoneRenderer()
+    {
+        BoneRenderer myBoneRenderer;
+
+        if (this.gameObject.GetComponent<BoneRenderer>() == null)
+        {
+            myBoneRenderer = this.gameObject.AddComponent<BoneRenderer>();
+        }
+        else
+        {
+            myBoneRenderer = this.gameObject.GetComponent<BoneRenderer>();
+        }
+
+        boneTransforms = new List<Transform>();
+        rigTransforms = new List<Tuple<Transform, Transform, Quaternion>>();
+
+
+        Stack<KNNBone> boneStack = new Stack<KNNBone>();
+        Stack<Transform> transformStack = new Stack<Transform>();
+        boneStack.Push(this.rootBone);
+        transformStack.Push(rig);
+
+        while (boneStack.Count > 0)
+        {
+            KNNBone topBone = boneStack.Pop();
+            Transform topTransform = null;
+            if (transformStack.Count > 0)
+                topTransform = transformStack.Pop();
+
+            foreach (KNNBone childBone in topBone.children)
+            {
+                boneStack.Push(childBone);
+                if (topTransform != null)
+                {
+                    Transform childTransform = topTransform.Find(childBone.name);
+                    if (childTransform != null)
+                        transformStack.Push(childTransform);
+                }
+            }
+
+            boneTransforms.Add(topBone.transform);
+            if (topTransform != null && topTransform.name == topBone.name)
+            {
+                rigTransforms.Add(Tuple.Create(topBone.transform, topTransform, topTransform.rotation));
+            }
+        }
+
+        myBoneRenderer.transforms = boneTransforms.ToArray();
+    }
+
+    public void SetSkeletonFromHandPos(KDTree<float,int> tree, Transform handTarget, string handName)
     {
         float[] posVec = new float[featureVectorLength];
+        Transform headTransform = rootBone.transform.Find("LowerBack/Spine/Spine1/Neck/Neck1/Head");
+        Transform neckTransform = rootBone.transform.Find("LowerBack/Spine/Spine1/Neck/Neck1/Head");
+        rootBone.transform.position -= headTransform.position;
+
+        SphericalCoords handTargetSpPosition = SphericalCoords.CartesianToSpherical(handTarget.position - headTransform.position);
+        float handTargetSpPositionAngle = handTargetSpPosition.theta * Mathf.Rad2Deg;
+        handTargetSpPosition.theta = 0;
+        Vector3 rotatedHandTargetPos = handTargetSpPosition.ToCartesian();
 
         for (int i = 0; i < featureVectorLength; i++)
         {
-            switch (i % 3)
+            switch (i % 2)
             {
                 case 0:
-                    posVec[i] = rHandTarget.position.x;
+                    posVec[i] = rotatedHandTargetPos.x;
                     break;
                 case 1:
-                    posVec[i] = rHandTarget.position.y;
-                    break;
-                case 2:
-                    posVec[i] = rHandTarget.position.z;
+                    posVec[i] = rotatedHandTargetPos.y;
                     break;
             }
         }
 
-        Tuple<float[],int>[] poseIndex = rHandQueryTree.NearestNeighbors(posVec, 1);
+        Tuple<float[], int>[] poseIndex = tree.NearestNeighbors(posVec, 1);
         int index = poseIndex[0].Item2;
         rootBone.SetToRotation(index);
+
+        Transform handTransform = rootBone.transform.Find(handName);
+        SphericalCoords handTransformSpPosition = SphericalCoords.CartesianToSpherical(handTransform.position - headTransform.position);
+        float handTransformSpPositionAngle = handTransformSpPosition.theta * Mathf.Rad2Deg;
+        rootBone.transform.localRotation *= Quaternion.Euler(0, -handTargetSpPositionAngle + handTransformSpPositionAngle, 0);
+    }
+
+    public void SetSkeletonFromRightHandPos(Transform rHandTarget)
+    {
+        SetSkeletonFromHandPos(rHandQueryTree, rHandTarget, "LowerBack/Spine/Spine1/RightShoulder/RightArm/RightForeArm/RightHand");
+    }
+
+    public void SetSkeletonFromLeftHandPos(Transform lHandTarget)
+    {
+        SetSkeletonFromHandPos(lHandQueryTree, lHandTarget, "LowerBack/Spine/Spine1/LeftShoulder/LeftArm/LeftForeArm/LeftHand");
+    }
+
+    public void AssignRig()
+    {
+        foreach (var currElement in rigTransforms)
+        {
+            currElement.Item2.rotation = currElement.Item1.rotation * currElement.Item3;
+        }
     }
 
     public void Save(string outputPath)
@@ -133,52 +214,17 @@ public class KNNSkeleton : MonoBehaviour
         this.featureVectorLength = featureVecLength;
         currLine = reader.ReadLine(); // skip comment
 
-        List<KNNBone> boneList = new List<KNNBone>();
+        GameObject rootBone = new GameObject();
+        this.rootBone = rootBone.AddComponent<KNNBone>();
+        this.rootBone.initKNNBoneFromFile(file);
+        this.rootBone.transform.parent = this.transform;
 
         for (int currBoneIdx = 0; currBoneIdx < nrOfBones; currBoneIdx++)
         {
-            currLine = reader.ReadLine();
-
-            words = currLine.Split(' ');
-
-            string currBoneName = words[0];
-            int currBoneId = int.Parse(words[1]);
-            int currBoneParentId = int.Parse(words[2]);
-            Vector3 currBoneOffset = new Vector3(float.Parse(words[3]), float.Parse(words[4]), float.Parse(words[5]));
-
-            GameObject newKNNBoneObj = new GameObject();
-            KNNBone currKNNBone = (KNNBone)newKNNBoneObj.AddComponent(typeof(KNNBone));
-            currKNNBone.initKNNBone(currBoneName);
-
-            currKNNBone.offset = currBoneOffset;
-
-            for (int currRotationIdx = 0; currRotationIdx < timeSteps; currRotationIdx++)
-            {
-                int currRotationFloatIdxOffset = 4 * currRotationIdx;
-                float rotX = float.Parse(words[6 + currRotationFloatIdxOffset]);
-                float rotY = float.Parse(words[6 + currRotationFloatIdxOffset + 1]);
-                float rotZ = float.Parse(words[6 + currRotationFloatIdxOffset + 2]);
-                float rotW = float.Parse(words[6 + currRotationFloatIdxOffset + 3]);
-
-                Quaternion currRot = new Quaternion(rotX, rotY, rotZ, rotW);
-                currKNNBone.rotations.Add(currRot);
-            }
-
-            if (currBoneParentId >= 0)
-            {
-                currKNNBone.parent = boneList[currBoneParentId];
-                currKNNBone.parent.children.Add(currKNNBone);
-                currKNNBone.transform.parent = currKNNBone.parent.transform;
-            }
-            else if(rootBone == null) // currBoneParentId = -1 && we have no rootBone
-            {
-                this.rootBone = currKNNBone;
-            }
-            currKNNBone.transform.localPosition = currKNNBone.offset;
-
-            boneList.Add(currKNNBone);
+            currLine = reader.ReadLine(); // ignore since it's done in the initBoneFromFile
         }
-        currLine = reader.ReadLine();
+
+            currLine = reader.ReadLine();
         if(this.lHandQueryTree == null || this.lHandQueryTree.Count == 0)
             this.lHandQueryTree = ParseKDTree(currLine, featureVecLength, timeSteps);
 
