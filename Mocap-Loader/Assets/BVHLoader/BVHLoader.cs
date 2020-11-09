@@ -5,6 +5,7 @@ using UnityEngine;
 using Supercluster.KDTree;
 using UnityEngine.Animations.Rigging;
 using System;
+using UnityEngine.Assertions;
 
 public class SkeletonConverter
 {
@@ -62,6 +63,7 @@ public class SkeletonConverter
 
 public class BVHLoader : MonoBehaviour
 {
+    private List<string> files;
     BVHParser bvhParser;
     Transform root;
     float size;
@@ -77,7 +79,7 @@ public class BVHLoader : MonoBehaviour
         
     }
 
-    public void loadSkeleton(string filename)
+    public void loadFromFile(string filename)
     {
         bvhParser = new BVHParser(File.ReadAllText(filename));
         
@@ -94,6 +96,21 @@ public class BVHLoader : MonoBehaviour
         UnityEngine.Animations.Rigging.BoneRenderer myBoneRenderer = this.GetComponent<UnityEngine.Animations.Rigging.BoneRenderer>();
         if (converter != null && converter.rootObj != null && myBoneRenderer != null)
             myBoneRenderer.transforms = converter.transforms.ToArray();
+
+    }
+    public void setFile(string filename)
+    {
+        files = new List<string>();
+        files.Add(filename);
+    }
+    public void setFolder(string foldername)
+    {
+        string[] currFiles = Directory.GetFiles(foldername);
+        files = new List<string>();
+        foreach(string file in currFiles)
+        {
+            files.Add(file);
+        }
     }
 
     public int getFrames()
@@ -169,7 +186,50 @@ public class BVHLoader : MonoBehaviour
         return 0;
     }
 
-    public void createKNNRig(string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, string outputPath)
+    public void createKNNRig(string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, bool ignoreRotation, string outputPath)
+    {
+        var lHandTreeNodes = new List<int>();
+        var lHandTreePoints = new List<float[]>();
+        var rHandTreeNodes = new List<int>();
+        var rHandTreePoints = new List<float[]>();
+
+        GameObject rootBoneObj = new GameObject();
+        KNNBone rootBone = rootBoneObj.AddComponent<KNNBone>();
+        Debug.Assert(files != null && files.Count > 0);
+        loadFromFile(files[0]);
+        setToFrame(0, true, true, true);
+
+        rootBone.initKNNBone(root.transform);
+
+        foreach (string file in files)
+        {
+            loadFromFile(file);
+            FillKNNTrees(rootBone, ignoreRotation, headBoneName, rHandBoneName, lHandBoneName, slidingWindowSizeInMS, slidingWindowOffsetInMS, pollingRate, lHandTreeNodes, rHandTreeNodes, lHandTreePoints, rHandTreePoints);
+        }
+
+        float slidingWindowSize = slidingWindowSizeInMS / 1000.0f;
+        float targetFrameTime = 1.0f / pollingRate;
+        int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
+        int featureVecLength = 9 * framesPerWindow;
+
+        var rHandTree = new KDTree<float, int>(featureVecLength, rHandTreePoints.ToArray(), rHandTreeNodes.ToArray(), Metrics.L2Norm);
+        var lHandTree = new KDTree<float, int>(featureVecLength, lHandTreePoints.ToArray(), lHandTreeNodes.ToArray(), Metrics.L2Norm);
+        
+        GameObject kNNSkeleton_ = new GameObject("KNN-Skeleton");
+        KNNSkeleton finalKNNSkeleton = kNNSkeleton_.AddComponent<KNNSkeleton>();
+
+        finalKNNSkeleton.SetKNNSkeleton(rootBone, ignoreRotation, lHandTree, rHandTree, featureVecLength);
+        finalKNNSkeleton.Save(outputPath);
+        DestroyImmediate(kNNSkeleton_);
+        DestroyImmediate(rootBoneObj);
+
+        GameObject kNNRig = new GameObject("KNN-Rig");
+
+        KNNRig kNNRigComponent = kNNRig.AddComponent<KNNRig>();
+        kNNRigComponent.skeletonPath = outputPath;
+    }
+
+    private void FillKNNTrees(KNNBone rootBone, bool ignoreRotation, string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, List<int> lHandTreeNodes, List<int> rHandTreeNodes, List<float[]> lHandTreePoints, List<float[]> rHandTreePoints)
     {
         float sourceFrameTime = bvhParser.frameTime;
         float targetFrameTime = 1.0f / pollingRate;
@@ -178,26 +238,16 @@ public class BVHLoader : MonoBehaviour
         float slidingWindowOffset = slidingWindowOffsetInMS / 1000.0f;
         float slidingWindowSize = slidingWindowSizeInMS / 1000.0f;
 
-        int totalWindows = (int)((totalTime - (slidingWindowSize))/ (slidingWindowOffset));
+        int totalWindows = (int)((totalTime - (slidingWindowSize)) / (slidingWindowOffset));
         int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
-        //var rHandTree = new KdTree<float, int>(dimensions: 3 * framesPerWindow, new FloatMath());
-        //var lHandTree = new KdTree<float, int>(3 * framesPerWindow, new FloatMath());
-        var rHandTreeNodes = new List<int>();
-        var rHandTreePoints = new List<float[]>(); 
-        
-        var lHandTreeNodes = new List<int>();
-        var lHandTreePoints = new List<float[]>();
+        int featureVecLength = 9 * framesPerWindow;
 
-        GameObject rootBoneObj = new GameObject();
-        KNNBone rootBone = rootBoneObj.AddComponent<KNNBone>();
-        
-        rootBone.initKNNBone(root.transform);
-        rootBone.DivideOffsetsBy(this.size);
+        setToFrame(0, true, true, true);
 
         for (int currentWindow = 0; currentWindow < totalWindows; currentWindow++)
         {
-            float[] lHandPoints = new float[framesPerWindow * 2];
-            float[] rHandPoints = new float[framesPerWindow * 2];
+            float[] lHandPoints = new float[featureVecLength];
+            float[] rHandPoints = new float[featureVecLength];
 
             for (int currFrame = 0; currFrame < framesPerWindow; currFrame++)
             {
@@ -207,7 +257,7 @@ public class BVHLoader : MonoBehaviour
                 Vector3 rHandPosition = root.Find(rHandBoneName).position;
                 Vector3 lHandPosition = root.Find(lHandBoneName).position;
 
-                if(sourceFrame >= 1.0f)
+                if (sourceFrame >= 1.0f)
                 {
                     setToFrame(sourceFrame - 1.0f, true, true, true);
                 }
@@ -231,63 +281,62 @@ public class BVHLoader : MonoBehaviour
                 Vector3 lHandAcceleration = (lHandVelocity - prevLHandVelocity) / sourceFrameTime;
                 Vector3 rHandAcceleration = (rHandVelocity - prevRHandVelocity) / sourceFrameTime;
 
-                SphericalCoords rHandSpPosition = SphericalCoords.CartesianToSpherical(rHandPosition);
-                SphericalCoords lHandSpPosition = SphericalCoords.CartesianToSpherical(lHandPosition);
+                if (ignoreRotation)
+                {
+                    SphericalCoords rHandSpPosition = SphericalCoords.CartesianToSpherical(rHandPosition);
+                    SphericalCoords lHandSpPosition = SphericalCoords.CartesianToSpherical(lHandPosition);
 
-                float rHandAngle = rHandSpPosition.theta * Mathf.Rad2Deg;
-                float lHandAngle = lHandSpPosition.theta * Mathf.Rad2Deg;
+                    float rHandAngle = rHandSpPosition.theta * Mathf.Rad2Deg;
+                    float lHandAngle = lHandSpPosition.theta * Mathf.Rad2Deg;
 
-                //rotate velocity and acceleration angle around "theta"
-                lHandVelocity = Quaternion.AngleAxis(-lHandAngle, Vector3.up) * lHandVelocity;
-                rHandVelocity = Quaternion.AngleAxis(-rHandAngle, Vector3.up) * rHandVelocity;
+                    //rotate velocity and acceleration angle around "theta"
+                    lHandVelocity = Quaternion.AngleAxis(-lHandAngle, Vector3.up) * lHandVelocity;
+                    rHandVelocity = Quaternion.AngleAxis(-rHandAngle, Vector3.up) * rHandVelocity;
 
-                lHandAcceleration = Quaternion.AngleAxis(-lHandAngle, Vector3.up) * lHandAcceleration;
-                rHandAcceleration = Quaternion.AngleAxis(-rHandAngle, Vector3.up) * rHandAcceleration;
+                    lHandAcceleration = Quaternion.AngleAxis(-lHandAngle, Vector3.up) * lHandAcceleration;
+                    rHandAcceleration = Quaternion.AngleAxis(-rHandAngle, Vector3.up) * rHandAcceleration;
 
-                rHandSpPosition.theta = 0;
-                lHandSpPosition.theta = 0;
+                    rHandSpPosition.theta = 0;
+                    lHandSpPosition.theta = 0;
 
-                rHandPosition = rHandSpPosition.ToCartesian();
-                lHandPosition = lHandSpPosition.ToCartesian();
+                    rHandPosition = rHandSpPosition.ToCartesian();
+                    lHandPosition = lHandSpPosition.ToCartesian();
+                }
 
-                int pointOffset = currFrame * 2;
-                lHandPoints[pointOffset]      = lHandPosition.x;
-                lHandPoints[pointOffset + 1]  = lHandPosition.y;
-                //lHandPoints[pointOffset + 2]  = lHandPosition.z;
 
-                rHandPoints[pointOffset]      = rHandPosition.x;
-                rHandPoints[pointOffset + 1]  = rHandPosition.y;
-                //rHandPoints[pointOffset + 2]  = rHandPosition.z;
+                int pointOffset = currFrame * 9;
+                lHandPoints[pointOffset]     = lHandPosition.x;
+                lHandPoints[pointOffset + 1] = lHandPosition.y;
+                lHandPoints[pointOffset + 2] = lHandPosition.z;
+
+                lHandPoints[pointOffset + 3] = lHandVelocity.x;
+                lHandPoints[pointOffset + 4] = lHandVelocity.y;
+                lHandPoints[pointOffset + 5] = lHandVelocity.z;
+
+                lHandPoints[pointOffset + 6] = lHandAcceleration.x;
+                lHandPoints[pointOffset + 7] = lHandAcceleration.y;
+                lHandPoints[pointOffset + 8] = lHandAcceleration.z;
+
+                rHandPoints[pointOffset] = rHandPosition.x;
+                rHandPoints[pointOffset + 1] = rHandPosition.y;
+                rHandPoints[pointOffset + 2] = rHandPosition.z;
+
+                rHandPoints[pointOffset + 3] = rHandVelocity.x;
+                rHandPoints[pointOffset + 4] = rHandVelocity.y;
+                rHandPoints[pointOffset + 5] = rHandVelocity.z;
+
+                rHandPoints[pointOffset + 6] = rHandAcceleration.x;
+                rHandPoints[pointOffset + 7] = rHandAcceleration.y;
+                rHandPoints[pointOffset + 8] = rHandAcceleration.z;
             }
             int lastPositionSourceIndex = (int)((currentWindow * slidingWindowOffset + slidingWindowSize) / sourceFrameTime);
-            
+
             setToFrame(lastPositionSourceIndex, true, true, true);
             rootBone.AddRotationsFromTransform(root);
 
-            //lHandTree.Add(lHandPoints, currentWindow);
-            //rHandTree.Add(rHandPoints, currentWindow);
-            lHandTreePoints.Add(lHandPoints); lHandTreeNodes.Add(currentWindow);
-            rHandTreePoints.Add(rHandPoints); rHandTreeNodes.Add(currentWindow);
-
+            lHandTreePoints.Add(lHandPoints); lHandTreeNodes.Add(lHandTreeNodes.Count);
+            rHandTreePoints.Add(rHandPoints); rHandTreeNodes.Add(rHandTreeNodes.Count);
         }
-
-        var rHandTree = new KDTree<float, int>(3 * framesPerWindow, rHandTreePoints.ToArray(), rHandTreeNodes.ToArray(), Metrics.L2Norm);//KdTree<float, int>(dimensions: 3 * framesPerWindow, points: rHandTreePoints, nodes: rHandTreeNodes, metric: );
-        var lHandTree = new KDTree<float, int>(3 * framesPerWindow, lHandTreePoints.ToArray(), lHandTreeNodes.ToArray(), Metrics.L2Norm);
-        
-        GameObject kNNSkeleton_ = new GameObject("KNN-Skeleton");
-        KNNSkeleton finalKNNSkeleton = kNNSkeleton_.AddComponent<KNNSkeleton>();
-
-        finalKNNSkeleton.SetKNNSkeleton(rootBone, lHandTree, rHandTree, framesPerWindow * 3);
-        finalKNNSkeleton.Save(outputPath);
-        DestroyImmediate(kNNSkeleton_);
-        DestroyImmediate(rootBoneObj);
-
-        GameObject kNNRig = new GameObject("KNN-Rig");
-
-        KNNRig kNNRigComponent = kNNRig.AddComponent<KNNRig>();
-        kNNRigComponent.skeletonPath = outputPath;
-        //kNNRigComponent.InitRig();
-
     }
 
     private void iterateFrameForChildren(BVHParser.BVHBone currBone, Transform currTransform, float frame, bool normalizeSkeleton)

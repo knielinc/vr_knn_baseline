@@ -27,6 +27,17 @@ public class SphericalCoords
         phi = p;
     }
 
+    public static float GetYRotFromVec(Vector3 coords)
+    {
+        return Mathf.Atan2(coords.z, coords.x);
+    }
+    public static Vector3 GetVecWithoutYRot(Vector3 coords)
+    {
+        SphericalCoords sphCoords = CartesianToSpherical(coords);
+        sphCoords.theta = 0;
+        return sphCoords.ToCartesian();
+    }
+
     public static Vector3 SphericalToCartesian(SphericalCoords coords)
     {
         float rSinPhi = coords.radius * Mathf.Sin(coords.phi);
