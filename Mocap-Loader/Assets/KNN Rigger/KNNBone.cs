@@ -1,7 +1,11 @@
-﻿using System.Collections;
+﻿using Accord;
+using Accord.Math;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Unity.Mathematics;
 using UnityEngine;
 
 public class KNNBone : MonoBehaviour
@@ -9,7 +13,7 @@ public class KNNBone : MonoBehaviour
     public List<KNNBone> children;
     public KNNBone parent;
     public List<Quaternion> rotations;
-    public Vector3 offset;
+    public UnityEngine.Vector3 offset;
     public void initKNNBone(string name)
     {
         this.name = name;
@@ -42,7 +46,7 @@ public class KNNBone : MonoBehaviour
             string currBoneName = words[0];
             int currBoneId = int.Parse(words[1]);
             int currBoneParentId = int.Parse(words[2]);
-            Vector3 currBoneOffset = new Vector3(float.Parse(words[3]), float.Parse(words[4]), float.Parse(words[5]));
+            UnityEngine.Vector3 currBoneOffset = new UnityEngine.Vector3(float.Parse(words[3]), float.Parse(words[4]), float.Parse(words[5]));
 
             KNNBone currKNNBone;
 
@@ -130,6 +134,43 @@ public class KNNBone : MonoBehaviour
         foreach (KNNBone child in this.children)
         {
             child.SetToRotation(index);
+        }
+    }
+
+    public void SetToRotations(RotationIndex[] rotationIndices)
+    {
+        if(rotationIndices.Length == 1)
+        {
+            SetToRotation(rotationIndices[0].index);
+            return;
+        }
+        var matrixM = Accord.Math.Matrix.Zeros(4,4);
+
+        double weightSum = 0;
+        foreach(RotationIndex rotIdx in rotationIndices)
+        {
+            Quaternion currRot = GetRotation(rotIdx.index).normalized;
+
+            double[] q = { currRot.x, currRot.y, currRot.z, currRot.w };
+            if (currRot.x < 0)
+                q.Multiply(-1);
+            double currWeight = rotIdx.weight;
+
+            matrixM = (q.Outer(q)).Multiply(currWeight).Add(matrixM);
+
+            weightSum += currWeight;
+        }
+
+        matrixM.Divide(weightSum);
+        var eigDec = new Accord.Math.Decompositions.EigenvalueDecomposition(matrixM, false, true);
+        double[] outQuat = eigDec.Eigenvectors.GetColumn(0);
+
+        Quaternion newRot = new Quaternion((float)outQuat[0], (float)outQuat[1], (float)outQuat[2], (float)outQuat[3]);
+        this.transform.localRotation = newRot;
+        //this.transform.localRotation = GetRotation(index);
+        foreach (KNNBone child in this.children)
+        {
+            child.SetToRotations(rotationIndices);
         }
     }
 

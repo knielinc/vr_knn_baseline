@@ -23,10 +23,14 @@ public class BVHLoaderEditor : Editor
     string outputPath = "Data/KNNSkeletons/knnSkeleton.knnSkeleton";
 
     string slidingWindowSize = "100";
-    bool ignoreRotationOnExport = true;
+    bool ignoreRotationOnExport = false;
 
     string slidingWindowOffset = "50";
-    string pollingRate = "80";
+    string pollingRate = "90";
+
+    bool filterByCorrelation = false;
+    bool useBothHandsForFeatureVec = false;
+    string correlationThreshold = "0";
 
     public override void OnInspectorGUI()
     {
@@ -56,7 +60,7 @@ public class BVHLoaderEditor : Editor
             bvhLoader.setFolder(bvhFolderName);
         }
 
-        hSliderValue = GUILayout.HorizontalScrollbar(hSliderValue, .1f, 0.0f, bvhLoader.getFrames() - 1.5f);
+        hSliderValue = GUILayout.HorizontalScrollbar(hSliderValue, .1f, 0.0f, bvhLoader.getFrameCount() - 1.5f);
         //GUILayout.Label(hSliderValue.ToString());
 
         if (prevHSliderValue != hSliderValue)
@@ -105,10 +109,24 @@ public class BVHLoaderEditor : Editor
         pollingRate = GUILayout.TextField(pollingRate);
 
         ignoreRotationOnExport = GUILayout.Toggle(ignoreRotationOnExport, "Ignore Rotation");
-        
+
+        useBothHandsForFeatureVec = GUILayout.Toggle(useBothHandsForFeatureVec, "Use both hands for feature-vector");
+
+        filterByCorrelation = GUILayout.Toggle(filterByCorrelation, "Filter by Correlation");
+
+        if (filterByCorrelation)
+        {
+            GUILayout.Label("Correlation Threshold");
+            correlationThreshold = GUILayout.TextField(correlationThreshold);
+            bvhLoader.correlationThreshold = float.Parse(correlationThreshold);
+        } else
+        {
+            bvhLoader.correlationThreshold = 0.0f;
+        }
+
         if (GUILayout.Button("Create K-NN Rig"))
         {
-            bvhLoader.createKNNRig(headBoneName, rHandBoneName, lHandBoneName, float.Parse(slidingWindowSize), float.Parse(slidingWindowOffset),  float.Parse(pollingRate), ignoreRotationOnExport, outputPath);
+            bvhLoader.createKNNRig(headBoneName, rHandBoneName, lHandBoneName, float.Parse(slidingWindowSize), float.Parse(slidingWindowOffset),  float.Parse(pollingRate), ignoreRotationOnExport, useBothHandsForFeatureVec, outputPath);
         }
         //GUILayout.Label("Output FileName");
 

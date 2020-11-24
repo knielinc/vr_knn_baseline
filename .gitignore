@@ -15,6 +15,7 @@
 /Mocap-Loader/Assets/Resources/
 /Mocap-Loader/Assets/Robot Kyle/
 /Mocap-Loader/Assets/MagicMirror/
+/Mocap-Loader/Assets/Accord.Math/
 
 
 
@@ -71,3 +72,4 @@ Mocap-Loader/Assets/Robot Kyle.meta
 Mocap-Loader/Assets/Oculus.meta
 *.knnSkeleton
 Mocap-Loader/Assets/Datastructures/KDTree.meta
+Mocap-Loader/recording.mp4

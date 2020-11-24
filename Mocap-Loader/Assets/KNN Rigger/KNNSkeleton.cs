@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Animations.Rigging;
 
@@ -86,29 +87,34 @@ public class KNNSkeleton : MonoBehaviour
             FeatureItem currFeatureItem = currFeatureContainer.Value;
 
             Vector3 handPos = currFeatureItem.position;
-            Vector3 handVel = currFeatureItem.position;
-            Vector3 handAcc = currFeatureItem.position;
+            Vector3 handVel = currFeatureItem.velocity;
+            Vector3 handAcc = currFeatureItem.acceleration;
 
             if (ignoreRotation)
             {
-                float handYRotValue = SphericalCoords.GetYRotFromVec(handPos);
+                float handYRotValue = SphericalCoords.GetYRotFromVec(handPos) * Mathf.Rad2Deg;
 
-                handPos = Quaternion.AngleAxis(-handYRotValue, Vector3.up) * handPos;
-                handVel = Quaternion.AngleAxis(-handYRotValue, Vector3.up) * handVel;
-                handAcc = Quaternion.AngleAxis(-handYRotValue, Vector3.up) * handAcc;
+                SphericalCoords sphCoords = SphericalCoords.CartesianToSpherical(handPos);
+                sphCoords.theta = 0;
+                Vector3 outVec = sphCoords.ToCartesian();
+
+                handPos = Quaternion.AngleAxis(handYRotValue, Vector3.up) * handPos;
+                handVel = Quaternion.AngleAxis(handYRotValue, Vector3.up) * handVel;
+                handAcc = Quaternion.AngleAxis(handYRotValue, Vector3.up) * handAcc;
             }
 
-            featureVec[i]     = handPos.x;
-            featureVec[i + 1] = handPos.y;
-            featureVec[i + 2] = handPos.z;
+            int startIndex = 9 * i;
+            featureVec[startIndex]     = handPos.x;
+            featureVec[startIndex + 1] = handPos.y;
+            featureVec[startIndex + 2] = handPos.z;
 
-            featureVec[i + 3] = handVel.x;
-            featureVec[i + 4] = handVel.y;
-            featureVec[i + 5] = handVel.z;
+            featureVec[startIndex + 3] = handVel.x;
+            featureVec[startIndex + 4] = handVel.y;
+            featureVec[startIndex + 5] = handVel.z;
 
-            featureVec[i + 6] = handAcc.x;
-            featureVec[i + 7] = handAcc.y;
-            featureVec[i + 8] = handAcc.z;
+            featureVec[startIndex + 6] = handAcc.x;
+            featureVec[startIndex + 7] = handAcc.y;
+            featureVec[startIndex + 8] = handAcc.z;
 
             if(currFeatureContainer.Previous != null)
             {
@@ -116,11 +122,21 @@ public class KNNSkeleton : MonoBehaviour
             }
         }
 
-        Tuple<float[], int>[] poseIndex = tree.NearestNeighbors(featureVec, 1);
+        Tuple<float[], int>[] poseIndices = tree.NearestNeighbors(featureVec, k);
         
-        int index = poseIndex[0].Item2;
+        int index = poseIndices[0].Item2;
 
-        rootBone.SetToRotation(index);
+        RotationIndex[] rotations = new RotationIndex[poseIndices.Length];
+
+        for(int i = 0; i < poseIndices.Length; i++)
+        {
+            double distance = Metrics.WeightedL2Norm(poseIndices[i].Item1, featureVec);
+            RotationIndex currIdx = new RotationIndex(poseIndices[i].Item2, (float)(1.0 / distance));
+            rotations[i] = currIdx;
+        }
+
+        rootBone.SetToRotations(rotations);
+        //rootBone.SetToRotation(index);
 
         Transform handTransform = rootBone.transform.Find(handName);
         SphericalCoords handTransformSpPosition = SphericalCoords.CartesianToSpherical(handTransform.position - headTransform.position);
@@ -261,7 +277,7 @@ public class KNNSkeleton : MonoBehaviour
 
             startingWindowIndex += featureVecLength + 1;
         }
-        return new KDTree<float, int>(featureVecLength, treePoints.ToArray(), treeNodes.ToArray(), Metrics.L2Norm);
+        return new KDTree<float, int>(featureVecLength, treePoints.ToArray(), treeNodes.ToArray(), Metrics.WeightedL2Norm);
     }
     private string KdTreeToString(KDTree<float, int> tree)
     {

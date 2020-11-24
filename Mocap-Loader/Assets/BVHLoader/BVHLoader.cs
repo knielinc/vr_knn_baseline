@@ -64,6 +64,8 @@ public class SkeletonConverter
 public class BVHLoader : MonoBehaviour
 {
     private List<string> files;
+    public float correlationThreshold { get; set; } = 0.0f;
+
     BVHParser bvhParser;
     Transform root;
     float size;
@@ -113,7 +115,7 @@ public class BVHLoader : MonoBehaviour
         }
     }
 
-    public int getFrames()
+    public int getFrameCount()
     {
         if (bvhParser == null)
             return 1;
@@ -186,7 +188,66 @@ public class BVHLoader : MonoBehaviour
         return 0;
     }
 
-    public void createKNNRig(string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, bool ignoreRotation, string outputPath)
+    private float DotProduct(Vector3 a, Vector3 b)
+    {
+        return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    public void calculateCorrelations(string lHandBoneName, string rHandBoneName, string lFootBoneName, string rFootBoneName)
+    {
+        Debug.Assert(files != null && files.Count > 0);
+        float[] correlations = new float[files.Count];
+        for(int currFileIdx = 0; currFileIdx < files.Count; currFileIdx++)
+        {
+            loadFromFile(files[currFileIdx]);
+
+            Vector3 lHandMean = new Vector3();
+            Vector3 rHandMean = new Vector3();
+
+            Vector3 lFootMean = new Vector3();
+            Vector3 rFootMean = new Vector3();
+
+            for (int currFrameidx = 0; currFrameidx < getFrameCount(); currFrameidx++)
+            {
+                setToFrame(currFrameidx, true, true, true);
+
+                Vector3 lHandPosition = root.Find(lHandBoneName).position;
+                Vector3 rHandPosition = root.Find(rHandBoneName).position;
+                
+                Vector3 lFootPosition = root.Find(lFootBoneName).position;
+                Vector3 rFootPosition = root.Find(rFootBoneName).position;
+
+                lHandMean += lHandPosition;
+                rHandMean += rHandPosition;
+
+                lFootMean += lFootPosition;
+                rFootMean += rFootPosition;
+            }
+
+            lHandMean /= getFrameCount();
+            rHandMean /= getFrameCount();
+            lFootMean /= getFrameCount();
+            rFootMean /= getFrameCount();
+
+            Vector3 denominator = new Vector3();
+            Vector3 numerator = new Vector3();
+
+            //Vector3 test = denominator * numerator;
+
+            for (int currFrameidx = 0; currFrameidx < getFrameCount(); currFrameidx++)
+            {
+                setToFrame(currFrameidx, true, true, true);
+
+                Vector3 rHandPosition = root.Find(rHandBoneName).position;
+                Vector3 lHandPosition = root.Find(lHandBoneName).position;
+
+                Vector3 rFootPosition = root.Find(rFootBoneName).position;
+                Vector3 lFootPosition = root.Find(lFootBoneName).position;
+            }
+        }
+    }
+
+    public void createKNNRig(string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, bool ignoreRotation, bool bothHandsInFeatureVec, string outputPath)
     {
         var lHandTreeNodes = new List<int>();
         var lHandTreePoints = new List<float[]>();
@@ -204,7 +265,7 @@ public class BVHLoader : MonoBehaviour
         foreach (string file in files)
         {
             loadFromFile(file);
-            FillKNNTrees(rootBone, ignoreRotation, headBoneName, rHandBoneName, lHandBoneName, slidingWindowSizeInMS, slidingWindowOffsetInMS, pollingRate, lHandTreeNodes, rHandTreeNodes, lHandTreePoints, rHandTreePoints);
+            FillKNNTrees(rootBone, ignoreRotation, bothHandsInFeatureVec, headBoneName, rHandBoneName, lHandBoneName, slidingWindowSizeInMS, slidingWindowOffsetInMS, pollingRate, lHandTreeNodes, rHandTreeNodes, lHandTreePoints, rHandTreePoints);
         }
 
         float slidingWindowSize = slidingWindowSizeInMS / 1000.0f;
@@ -212,8 +273,8 @@ public class BVHLoader : MonoBehaviour
         int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
         int featureVecLength = 9 * framesPerWindow;
 
-        var rHandTree = new KDTree<float, int>(featureVecLength, rHandTreePoints.ToArray(), rHandTreeNodes.ToArray(), Metrics.L2Norm);
-        var lHandTree = new KDTree<float, int>(featureVecLength, lHandTreePoints.ToArray(), lHandTreeNodes.ToArray(), Metrics.L2Norm);
+        var rHandTree = new KDTree<float, int>(featureVecLength, rHandTreePoints.ToArray(), rHandTreeNodes.ToArray(), Metrics.WeightedL2Norm);
+        var lHandTree = new KDTree<float, int>(featureVecLength, lHandTreePoints.ToArray(), lHandTreeNodes.ToArray(), Metrics.WeightedL2Norm);
         
         GameObject kNNSkeleton_ = new GameObject("KNN-Skeleton");
         KNNSkeleton finalKNNSkeleton = kNNSkeleton_.AddComponent<KNNSkeleton>();
@@ -229,7 +290,7 @@ public class BVHLoader : MonoBehaviour
         kNNRigComponent.skeletonPath = outputPath;
     }
 
-    private void FillKNNTrees(KNNBone rootBone, bool ignoreRotation, string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, List<int> lHandTreeNodes, List<int> rHandTreeNodes, List<float[]> lHandTreePoints, List<float[]> rHandTreePoints)
+    private void FillKNNTrees(KNNBone rootBone, bool ignoreRotation, bool bothHandsInFeatureVec, string headBoneName, string rHandBoneName, string lHandBoneName, float slidingWindowSizeInMS, float slidingWindowOffsetInMS, float pollingRate, List<int> lHandTreeNodes, List<int> rHandTreeNodes, List<float[]> lHandTreePoints, List<float[]> rHandTreePoints)
     {
         float sourceFrameTime = bvhParser.frameTime;
         float targetFrameTime = 1.0f / pollingRate;
@@ -240,7 +301,8 @@ public class BVHLoader : MonoBehaviour
 
         int totalWindows = (int)((totalTime - (slidingWindowSize)) / (slidingWindowOffset));
         int framesPerWindow = (int)((slidingWindowSize) / targetFrameTime);
-        int featureVecLength = 9 * framesPerWindow;
+        int nrOfFeatures = bothHandsInFeatureVec ? 18 : 9;
+        int featureVecLength = nrOfFeatures * framesPerWindow;
 
         setToFrame(0, true, true, true);
 
@@ -275,8 +337,9 @@ public class BVHLoader : MonoBehaviour
 
                 Vector3 lHandVelocity = (lHandPosition - prevLHandPosition) / sourceFrameTime;
                 Vector3 rHandVelocity = (rHandPosition - prevRHandPosition) / sourceFrameTime;
+
                 Vector3 prevLHandVelocity = (prevLHandPosition - prevPrevLHandPosition) / sourceFrameTime;
-                Vector3 prevRHandVelocity = (prevLHandPosition - prevPrevRHandPosition) / sourceFrameTime;
+                Vector3 prevRHandVelocity = (prevRHandPosition - prevPrevRHandPosition) / sourceFrameTime;
 
                 Vector3 lHandAcceleration = (lHandVelocity - prevLHandVelocity) / sourceFrameTime;
                 Vector3 rHandAcceleration = (rHandVelocity - prevRHandVelocity) / sourceFrameTime;
@@ -290,11 +353,11 @@ public class BVHLoader : MonoBehaviour
                     float lHandAngle = lHandSpPosition.theta * Mathf.Rad2Deg;
 
                     //rotate velocity and acceleration angle around "theta"
-                    lHandVelocity = Quaternion.AngleAxis(-lHandAngle, Vector3.up) * lHandVelocity;
-                    rHandVelocity = Quaternion.AngleAxis(-rHandAngle, Vector3.up) * rHandVelocity;
+                    lHandVelocity = Quaternion.AngleAxis(lHandAngle, Vector3.up) * lHandVelocity;
+                    rHandVelocity = Quaternion.AngleAxis(rHandAngle, Vector3.up) * rHandVelocity;
 
-                    lHandAcceleration = Quaternion.AngleAxis(-lHandAngle, Vector3.up) * lHandAcceleration;
-                    rHandAcceleration = Quaternion.AngleAxis(-rHandAngle, Vector3.up) * rHandAcceleration;
+                    lHandAcceleration = Quaternion.AngleAxis(lHandAngle, Vector3.up) * lHandAcceleration;
+                    rHandAcceleration = Quaternion.AngleAxis(rHandAngle, Vector3.up) * rHandAcceleration;
 
                     rHandSpPosition.theta = 0;
                     lHandSpPosition.theta = 0;
@@ -304,7 +367,7 @@ public class BVHLoader : MonoBehaviour
                 }
 
 
-                int pointOffset = currFrame * 9;
+                int pointOffset = currFrame * nrOfFeatures;
                 lHandPoints[pointOffset]     = lHandPosition.x;
                 lHandPoints[pointOffset + 1] = lHandPosition.y;
                 lHandPoints[pointOffset + 2] = lHandPosition.z;
@@ -317,7 +380,7 @@ public class BVHLoader : MonoBehaviour
                 lHandPoints[pointOffset + 7] = lHandAcceleration.y;
                 lHandPoints[pointOffset + 8] = lHandAcceleration.z;
 
-                rHandPoints[pointOffset] = rHandPosition.x;
+                rHandPoints[pointOffset]     = rHandPosition.x;
                 rHandPoints[pointOffset + 1] = rHandPosition.y;
                 rHandPoints[pointOffset + 2] = rHandPosition.z;
 
@@ -328,6 +391,33 @@ public class BVHLoader : MonoBehaviour
                 rHandPoints[pointOffset + 6] = rHandAcceleration.x;
                 rHandPoints[pointOffset + 7] = rHandAcceleration.y;
                 rHandPoints[pointOffset + 8] = rHandAcceleration.z;
+
+                if (bothHandsInFeatureVec)
+                {
+                    lHandPoints[pointOffset + 9]  = rHandPosition.x;
+                    lHandPoints[pointOffset + 10] = rHandPosition.y;
+                    lHandPoints[pointOffset + 11] = rHandPosition.z;
+
+                    lHandPoints[pointOffset + 12] = rHandVelocity.x;
+                    lHandPoints[pointOffset + 13] = rHandVelocity.y;
+                    lHandPoints[pointOffset + 14] = rHandVelocity.z;
+
+                    lHandPoints[pointOffset + 15] = rHandAcceleration.x;
+                    lHandPoints[pointOffset + 16] = rHandAcceleration.y;
+                    lHandPoints[pointOffset + 17] = rHandAcceleration.z;
+
+                    rHandPoints[pointOffset + 9]  = lHandPosition.x;
+                    rHandPoints[pointOffset + 10] = lHandPosition.y;
+                    rHandPoints[pointOffset + 11] = lHandPosition.z;
+
+                    rHandPoints[pointOffset + 12] = lHandVelocity.x;
+                    rHandPoints[pointOffset + 13] = lHandVelocity.y;
+                    rHandPoints[pointOffset + 14] = lHandVelocity.z;
+
+                    rHandPoints[pointOffset + 15] = lHandAcceleration.x;
+                    rHandPoints[pointOffset + 16] = lHandAcceleration.y;
+                    rHandPoints[pointOffset + 17] = lHandAcceleration.z;
+                }
             }
             int lastPositionSourceIndex = (int)((currentWindow * slidingWindowOffset + slidingWindowSize) / sourceFrameTime);
 

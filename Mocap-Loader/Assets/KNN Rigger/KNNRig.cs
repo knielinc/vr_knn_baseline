@@ -30,7 +30,7 @@ public class KNNRig : MonoBehaviour
     public Transform rHandTarget;
     public Transform lHandTarget;
 
-    public float scale = 1.3f;
+    public float scale = 1.0f;
 
     private List<Tuple<KNNBone, KNNBone, KNNBone>> allBones; // left right final
     private List<Tuple<Transform, Transform, Quaternion>> rigTransforms;
@@ -288,7 +288,7 @@ public class KNNRig : MonoBehaviour
 
             if(rightArmFeatureVec.Count > 3)
             {
-                finalBone.rotation = Quaternion.Slerp(finalBone.rotation, currRotation, 0.3f);
+                finalBone.rotation = Quaternion.Slerp(finalBone.rotation, currRotation, 0.5f);
             } else
             {
                 finalBone.rotation = currRotation;
@@ -299,7 +299,6 @@ public class KNNRig : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-
         iterationCounter++;
         Vector3 headPosition = this.headTarget.position;
         Vector3 lHandPosition = this.lHandTarget.position;
@@ -319,15 +318,15 @@ public class KNNRig : MonoBehaviour
         SetFinalPoseFromLandR();
 
         AssignRig();
-
     }
 
     private void UpdateFeatureVectors(Vector3 currLeftHandPos, Vector3 currRightHandPos)
     {
+        float deltaT = 1.0f / updateFrequency;
         float currTime = Time.time;
-        if(currTime - lastFeatureTime >= 1.0f / updateFrequency)
+        if(currTime - lastFeatureTime >= deltaT)
         {
-            float targetTime = lastFeatureTime + 1.0f / updateFrequency;
+            float targetTime = lastFeatureTime + deltaT;
             float t = (targetTime - lastUpdateTime) / (currTime - lastUpdateTime);
 
             Vector3 targetPosLeftHand = Vector3.Lerp(lastPosLeftHand, currLeftHandPos, t);
@@ -341,11 +340,11 @@ public class KNNRig : MonoBehaviour
 
             if (rightArmFeatureVec.Count > 0 &&leftArmFeatureVec.Count > 0)
             {
-                leftHandVel = leftArmFeatureVec.Last.Value.position - targetPosLeftHand;
-                rightHandVel = rightArmFeatureVec.Last.Value.position - targetPosRightHand;
+                leftHandVel  = (leftArmFeatureVec.Last.Value.position - targetPosLeftHand)   / deltaT;
+                rightHandVel = (rightArmFeatureVec.Last.Value.position - targetPosRightHand) / deltaT;
 
-                leftHandAcc = leftArmFeatureVec.Last.Value.velocity - leftHandVel;
-                rightHandAcc = rightArmFeatureVec.Last.Value.velocity - rightHandVel;
+                leftHandAcc  = (leftArmFeatureVec.Last.Value.velocity - leftHandVel)   / deltaT;
+                rightHandAcc = (rightArmFeatureVec.Last.Value.velocity - rightHandVel) / deltaT;
 
             }
             else
